@@ -55,7 +55,7 @@ jobs:
       - name: Save tested image
         if: github.event_name != 'pull_request'
         run: docker save openmaskit-companion:candidate | gzip > image.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name != 'pull_request'
         with:
           name: image-${{ matrix.arch }}
@@ -143,7 +143,7 @@ jobs:
       - uses: actions/attest-build-provenance@v3
         with:
           subject-path: dist/downloads/*
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: development-${{ matrix.os }}
           path: dist/downloads/*
