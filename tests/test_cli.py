@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+import sys
 
 import pytest
 
@@ -22,12 +23,12 @@ def test_status_outputs_safe_json_without_credentials(tmp_path, monkeypatch, cap
 
 def test_approve_requires_explicit_confirmation_and_saves_profile(tmp_path, monkeypatch, capsys):
     profile_path = tmp_path / "profile.json"
-    profile_path.write_text(json.dumps({"command": "/usr/bin/env", "args": ["synthetic"]}))
+    profile_path.write_text(json.dumps({"command": sys.executable, "args": ["synthetic"]}))
     monkeypatch.setattr("builtins.input", lambda _prompt: "approve")
     invoke(tmp_path / "home", "approve", "fixture", "--name", "Synthetic", "--profile", str(profile_path))
     assert json.loads(capsys.readouterr().out) == {"approved": "fixture", "restart_connector": True}
     saved = read_json(tmp_path / "home/profiles.json")["fixture"]
-    assert saved["command"] == "/usr/bin/env"
+    assert saved["command"] == sys.executable
     assert saved["args"] == ["synthetic"]
     assert saved["name"] == "Synthetic"
 
@@ -65,8 +66,8 @@ def test_cli_validates_profile_identifiers_before_dispatch(profile_id):
 
 def test_forget_and_profiles_operate_on_private_approved_state(tmp_path, capsys):
     write_json(tmp_path / "profiles.json", {
-        "keep": {"name": "Keep", "command": "/usr/bin/env", "args": [], "env": {}, "cwd": None},
-        "remove": {"name": "Remove", "command": "/usr/bin/env", "args": [], "env": {}, "cwd": None},
+        "keep": {"name": "Keep", "command": sys.executable, "args": [], "env": {}, "cwd": None},
+        "remove": {"name": "Remove", "command": sys.executable, "args": [], "env": {}, "cwd": None},
     })
     invoke(tmp_path, "profiles")
     assert json.loads(capsys.readouterr().out) == {"profiles": [{"id": "keep", "name": "Keep"},
