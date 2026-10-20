@@ -1,0 +1,91 @@
+name: Security scans
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  secrets:
+    name: Gitleaks full-history scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install verified Gitleaks release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=8.30.1
+          archive="$RUNNER_TEMP/gitleaks_${version}_linux_x64.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' \
+            551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb \
+            "$archive" | sha256sum --check --status
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" gitleaks
+          cat > "$RUNNER_TEMP/gitleaks.toml" <<'EOF'
+          [extend]
+          useDefault = true
+          EOF
+          : > "$RUNNER_TEMP/gitleaks.ignore"
+          set +e
+          "$RUNNER_TEMP/gitleaks" git \
+            --config "$RUNNER_TEMP/gitleaks.toml" \
+            --gitleaks-ignore-path "$RUNNER_TEMP/gitleaks.ignore" \
+            --ignore-gitleaks-allow \
+            --redact=100 \
+            --report-format=json \
+            --report-path "$RUNNER_TEMP/gitleaks-report.json" \
+            --log-level=error \
+            --no-banner \
+            --timeout=300 \
+            "$GITHUB_WORKSPACE"
+          scan_rc=$?
+          set -e
+          if [[ "$scan_rc" -eq 1 ]]; then
+            python3 - "$RUNNER_TEMP/gitleaks-report.json" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as report_file:
+              findings = json.load(report_file)
+          rules = sorted({finding.get("RuleID", "unknown") for finding in findings})
+          print(f"Gitleaks found {len(findings)} secret finding(s); values and file contents withheld.")
+          print("Rule IDs: " + (", ".join(rules) if rules else "unavailable"))
+          PY
+          fi
+          exit "$scan_rc"
+
+  repository:
+    name: Trivy repository scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scan tracked repository files
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: repo
+          scan-ref: .
+          version: v0.70.0
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: 'false'
+          exit-code: '1'
+          skip-dirs: .runtime,.venv,dist,build,.git
+          format: json
+          output: ${{ runner.temp }}/trivy-report.json
+          hide-progress: 'true'
+          timeout: 5m
+      - name: Print redacted scan summary
+        if: always()
+        run: python3 scripts/security_report.py "${{ runner.temp }}/trivy-report.json"

@@ -7,18 +7,38 @@ import pytest
 from pydantic import ValidationError
 
 from openmaskit_companion import manager
-from openmaskit_companion.state import Profile, identifier, local_endpoint, read_json, write_json
+from openmaskit_companion.state import (
+    Profile,
+    identifier,
+    local_endpoint,
+    read_json,
+    write_json,
+)
 
 
-@pytest.mark.parametrize("value", ["../escape", "UPPER", "space name", "", "a" * 49, ";touch"])
+@pytest.mark.parametrize(
+    "value", ["../escape", "UPPER", "space name", "", "a" * 49, ";touch"]
+)
 def test_identifiers(value):
     with pytest.raises(ValueError):
         identifier(value)
 
 
-@pytest.mark.parametrize("url", ["http://evil.test:9495", "https://127.0.0.1:9495", "http://user@localhost:9",
-    "http://localhost:9/path", "http://localhost:9?secret=1", "http://localhost", "http://localhost:0",
-    "http://localhost:9#fragment", "http://127.0.0.1.evil.test:9", "http://localhost:9\n"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://evil.test:9495",
+        "https://127.0.0.1:9495",
+        "http://user@localhost:9",
+        "http://localhost:9/path",
+        "http://localhost:9?secret=1",
+        "http://localhost",
+        "http://localhost:0",
+        "http://localhost:9#fragment",
+        "http://127.0.0.1.evil.test:9",
+        "http://localhost:9\n",
+    ],
+)
 def test_endpoints_are_loopback_only(url):
     with pytest.raises(ValueError):
         local_endpoint(url)
@@ -54,19 +74,36 @@ def test_initialize_and_scoped_lifecycle(tmp_path):
     assert len(project) == len(manager.PROJECT) + 13
     with pytest.raises(ValueError):
         manager.initialize(tmp_path, image)
-    with patch.object(manager, "docker_binary", return_value="/usr/local/bin/docker"), patch.object(subprocess, "run") as run:
-        run.side_effect = [subprocess.CompletedProcess([], 0, '"unix:///synthetic/docker.sock"', ""),
-                           subprocess.CompletedProcess([], 0, "[]", "")]
+    with (
+        patch.object(manager, "docker_binary", return_value="/usr/local/bin/docker"),
+        patch.object(subprocess, "run") as run,
+    ):
+        run.side_effect = [
+            subprocess.CompletedProcess([], 0, '"unix:///synthetic/docker.sock"', ""),
+            subprocess.CompletedProcess([], 0, "[]", ""),
+        ]
         manager.compose(tmp_path, "stop", "--timeout", "45")
         args = run.call_args.args[0]
-        assert args[:4] == ["/usr/local/bin/docker", "compose", "--project-name", project]
+        assert args[:4] == [
+            "/usr/local/bin/docker",
+            "compose",
+            "--project-name",
+            project,
+        ]
         assert args[-3:] == ["stop", "--timeout", "45"]
         assert "shell" not in run.call_args.kwargs
         assert "admin_token" not in json.dumps(args)
 
 
-@pytest.mark.parametrize("image", ["evil/image:latest", "ghcr.io/ricardomartins-gravitee/openmaskit-companion:latest",
-    manager.IMAGE_PREFIX + "a" * 63, manager.IMAGE_PREFIX + "g" * 64])
+@pytest.mark.parametrize(
+    "image",
+    [
+        "evil/image:latest",
+        "ghcr.io/ricardomartins-gravitee/openmaskit-companion:latest",
+        manager.IMAGE_PREFIX + "a" * 63,
+        manager.IMAGE_PREFIX + "g" * 64,
+    ],
+)
 def test_only_immutable_expected_images(image):
     with pytest.raises(ValueError):
         manager.image_digest(image)
@@ -90,7 +127,14 @@ def test_each_home_gets_a_distinct_compose_project(tmp_path):
     assert second_project.startswith(manager.PROJECT + "-")
 
 
-@pytest.mark.parametrize("project", ["other-project", "openmaskit-companion-../../", "openmaskit-companion-ABCDEF123456"])
+@pytest.mark.parametrize(
+    "project",
+    [
+        "other-project",
+        "openmaskit-companion-../../",
+        "openmaskit-companion-ABCDEF123456",
+    ],
+)
 def test_untrusted_managed_project_name_is_rejected_before_docker(tmp_path, project):
     image = manager.IMAGE_PREFIX + "a" * 64
     manager.initialize(tmp_path, image)
@@ -98,30 +142,56 @@ def test_untrusted_managed_project_name_is_rejected_before_docker(tmp_path, proj
     marker = read_json(marker_path)
     marker["project"] = project
     write_json(marker_path, marker)
-    with patch.object(manager, "docker_binary") as binary, pytest.raises(ValueError, match="companion-managed"):
+    with (
+        patch.object(manager, "docker_binary") as binary,
+        pytest.raises(ValueError, match="companion-managed"),
+    ):
         manager.compose(tmp_path, "stop")
     binary.assert_not_called()
 
 
-@pytest.mark.parametrize("endpoint", ["ssh://remote.example", "tcp://127.0.0.1:2375", "tcp://remote.example:2376"])
+@pytest.mark.parametrize(
+    "endpoint",
+    ["ssh://remote.example", "tcp://127.0.0.1:2375", "tcp://remote.example:2376"],
+)
 def test_remote_docker_not_managed(endpoint):
     with pytest.raises(ValueError):
         manager.local_docker("docker", {"DOCKER_HOST": endpoint})
 
 
 def test_explicit_local_docker_context_takes_precedence_over_docker_host():
-    environment = {"DOCKER_CONTEXT": "synthetic-local", "DOCKER_HOST": "tcp://remote.example:2376"}
-    with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(
-            [], 0, '"unix:///synthetic/local-docker.sock"', "")) as run:
+    environment = {
+        "DOCKER_CONTEXT": "synthetic-local",
+        "DOCKER_HOST": "tcp://remote.example:2376",
+    }
+    with patch.object(
+        subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(
+            [], 0, '"unix:///synthetic/local-docker.sock"', ""
+        ),
+    ) as run:
         manager.local_docker("/usr/local/bin/docker", environment)
-    assert run.call_args.args[0] == ["/usr/local/bin/docker", "context", "inspect",
-                                     "synthetic-local", "--format", "{{json .Endpoints.docker.Host}}"]
+    assert run.call_args.args[0] == [
+        "/usr/local/bin/docker",
+        "context",
+        "inspect",
+        "synthetic-local",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+    ]
     assert run.call_args.kwargs["env"] is environment
 
 
 def test_explicit_remote_docker_context_is_rejected_even_if_docker_host_is_local():
-    environment = {"DOCKER_CONTEXT": "synthetic-remote", "DOCKER_HOST": "unix:///synthetic/local.sock"}
-    with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(
-            [], 0, '"ssh://docker.example"', "")):
+    environment = {
+        "DOCKER_CONTEXT": "synthetic-remote",
+        "DOCKER_HOST": "unix:///synthetic/local.sock",
+    }
+    with patch.object(
+        subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess([], 0, '"ssh://docker.example"', ""),
+    ):
         with pytest.raises(ValueError, match="local Docker socket"):
             manager.local_docker("/usr/local/bin/docker", environment)

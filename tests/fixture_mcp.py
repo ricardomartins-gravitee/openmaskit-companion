@@ -1,10 +1,11 @@
 """Synthetic MCP only; no mailbox, real contacts, user files or network access."""
+
 import asyncio
 import hashlib
 import os
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.fastmcp import Context, FastMCP
 
 if marker := os.environ.get("SYNTHETIC_PID_FILE"):
     Path(marker).write_text(str(os.getpid()))

@@ -92,6 +92,11 @@ See [architecture and security](docs/architecture.md),
 from locked dependencies. Releases retain checksums and source provenance.
 No claim of Apple signing/notarization is made for development artifacts.
 
+Publication also requires [code quality and security checks](docs/security-checks.md):
+Trivy, Gitleaks, Ruff, Bandit, dependency auditing, native Swift lint, and measured
+test coverage. [SonarQube Cloud integration](docs/sonarqube.md) is prepared for a
+hosted dashboard and requires a one-time service connection.
+
 This project's initial scope is macOS with Docker Desktop on the same computer.
 The connector core is portable; remote deployments, native Windows/Linux apps,
 OS keychain integration and automatic updates need separate acceptance.

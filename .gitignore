@@ -9,3 +9,12 @@ __pycache__/
 *.pyc
 .DS_Store
 *.spec
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.ruff_cache/
+.scannerwork/
+bandit.json
+pip-audit.json
+requirements-audit.txt

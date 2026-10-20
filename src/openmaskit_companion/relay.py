@@ -3,6 +3,7 @@
 The Python MCP SDK owns Streamable HTTP sessions; we forward the complete
 JSON-RPC stream to a locally approved stdio subprocess over an outbound channel.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,7 +37,8 @@ def digest(token: str) -> str:
 
 def authorized(headers, token: str) -> bool:
     return not headers.get("origin") and secrets.compare_digest(
-        headers.get("authorization", ""), "Bearer " + token)
+        headers.get("authorization", ""), "Bearer " + token
+    )
 
 
 class Peer:
@@ -76,18 +78,29 @@ class Forwarder:
         queue = peer.sessions[session] = asyncio.Queue(maxsize=32)
         tasks = []
         try:
-            await peer.send({"type": "open", "session": session, "profile": self.profile})
+            await peer.send(
+                {"type": "open", "session": session, "profile": self.profile}
+            )
 
             async def outbound():
                 async for message in read:
                     if isinstance(message, Exception):
                         break
-                    await peer.send({"type": "message", "session": session,
-                                     "message": message.message.model_dump(mode="json", by_alias=True, exclude_none=True)})
+                    await peer.send(
+                        {
+                            "type": "message",
+                            "session": session,
+                            "message": message.message.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            ),
+                        }
+                    )
 
             async def inbound():
                 while (message := await queue.get()) is not None:
-                    await write.send(SessionMessage(JSONRPCMessage.model_validate(message)))
+                    await write.send(
+                        SessionMessage(JSONRPCMessage.model_validate(message))
+                    )
 
             tasks = [asyncio.create_task(outbound()), asyncio.create_task(inbound())]
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -98,7 +111,8 @@ class Forwarder:
             peer.sessions.pop(session, None)
             try:
                 await peer.send({"type": "close", "session": session})
-            except Exception:
+            # A close notification is best effort after disconnect.
+            except Exception:  # nosec B110
                 pass
 
 
@@ -125,13 +139,23 @@ class Hub:
         async with self.manager_lock:
             if key not in self.managers:
                 if len(self.managers) >= 64:
-                    raise ValueError("Relay profile capacity reached; restart to clear inactive profiles")
+                    raise ValueError(
+                        "Relay profile capacity reached; restart to clear inactive profiles"
+                    )
                 manager = StreamableHTTPSessionManager(
-                    Forwarder(self, connector, profile), json_response=True,
+                    Forwarder(self, connector, profile),
+                    json_response=True,
                     session_idle_timeout=300,
                     security_settings=TransportSecuritySettings(
-                        allowed_hosts=["connector-relay:9495", "127.0.0.1:*", "localhost:*", "[::1]:*"],
-                        allowed_origins=[]))
+                        allowed_hosts=[
+                            "connector-relay:9495",
+                            "127.0.0.1:*",
+                            "localhost:*",
+                            "[::1]:*",
+                        ],
+                        allowed_origins=[],
+                    ),
+                )
                 ready = asyncio.Event()
 
                 async def supervise():
@@ -160,7 +184,9 @@ class LimitMiddleware:
                 return
             size += len(message.get("body", b""))
             if size > MAX_BYTES:
-                return await JSONResponse({"error": "Request too large"}, status_code=413)(scope, receive, send)
+                return await JSONResponse(
+                    {"error": "Request too large"}, status_code=413
+                )(scope, receive, send)
             chunks.append(message)
             if not message.get("more_body"):
                 break
@@ -193,10 +219,21 @@ def create_app(state_path: Path):
         if not authorized(request.headers, hub.settings["admin_token"]):
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
         if request.method == "GET":
-            return JSONResponse({"connectors": [{"id": key, "name": row["name"],
-                "connected": key in hub.peers,
-                "profiles": hub.peers[key].profiles if key in hub.peers else []}
-                for key, row in hub.settings.get("connectors", {}).items()]})
+            return JSONResponse(
+                {
+                    "connectors": [
+                        {
+                            "id": key,
+                            "name": row["name"],
+                            "connected": key in hub.peers,
+                            "profiles": hub.peers[key].profiles
+                            if key in hub.peers
+                            else [],
+                        }
+                        for key, row in hub.settings.get("connectors", {}).items()
+                    ]
+                }
+            )
         try:
             body = await request.json()
             if request.url.path == "/admin/revoke":
@@ -221,11 +258,15 @@ def create_app(state_path: Path):
             hub.pairings[digest(code)] = (now + 120, name)
             return JSONResponse({"code": code, "expires_in": 120})
         except (ValueError, KeyError, TypeError):
-            return JSONResponse({"error": "Invalid administrative request"}, status_code=400)
+            return JSONResponse(
+                {"error": "Invalid administrative request"}, status_code=400
+            )
 
     async def pair(request: Request):
         if request.headers.get("origin"):
-            return JSONResponse({"error": "Browser pairing is not allowed"}, status_code=403)
+            return JSONResponse(
+                {"error": "Browser pairing is not allowed"}, status_code=403
+            )
         now = time.monotonic()
         hub.attempts = [t for t in hub.attempts if now - t < 60]
         if len(hub.attempts) >= 10:
@@ -237,9 +278,14 @@ def create_app(state_path: Path):
             if expiry < now or len(hub.settings.get("connectors", {})) >= 16:
                 raise ValueError("Pairing expired")
         except (ValueError, KeyError, TypeError):
-            return JSONResponse({"error": "Invalid or expired pairing"}, status_code=401)
+            return JSONResponse(
+                {"error": "Invalid or expired pairing"}, status_code=401
+            )
         token, key = secrets.token_urlsafe(32), "computer-" + secrets.token_hex(6)
-        hub.settings.setdefault("connectors", {})[key] = {"name": name, "token_hash": digest(token)}
+        hub.settings.setdefault("connectors", {})[key] = {
+            "name": name,
+            "token_hash": digest(token),
+        }
         hub.save()
         return JSONResponse({"id": key, "token": token, "protocol": PROTOCOL})
 
@@ -247,8 +293,12 @@ def create_app(state_path: Path):
         key = websocket.path_params["connector"]
         row = hub.settings.get("connectors", {}).get(key)
         raw = websocket.headers.get("authorization", "")
-        valid = (not websocket.headers.get("origin") and row and raw.startswith("Bearer ")
-                 and secrets.compare_digest(digest(raw[7:]), row["token_hash"]))
+        valid = (
+            not websocket.headers.get("origin")
+            and row
+            and raw.startswith("Bearer ")
+            and secrets.compare_digest(digest(raw[7:]), row["token_hash"])
+        )
         if not valid or key in hub.channels:
             await websocket.close(code=4401)
             return
@@ -257,14 +307,21 @@ def create_app(state_path: Path):
         try:
             await websocket.accept()
             hello = json.loads(await asyncio.wait_for(websocket.receive_text(), 10))
-            if (hello.get("type") != "hello" or hello.get("protocol") != PROTOCOL
-                    or set(hello) != {"type", "protocol", "profiles"}):
+            if (
+                hello.get("type") != "hello"
+                or hello.get("protocol") != PROTOCOL
+                or set(hello) != {"type", "protocol", "profiles"}
+            ):
                 raise ValueError("Invalid handshake")
             profiles = hello["profiles"]
             if not isinstance(profiles, list) or len(profiles) > 32:
                 raise ValueError("Invalid profile list")
             for profile in profiles:
-                if set(profile) != {"id", "name"} or not isinstance(profile["name"], str) or len(profile["name"]) > 100:
+                if (
+                    set(profile) != {"id", "name"}
+                    or not isinstance(profile["name"], str)
+                    or len(profile["name"]) > 100
+                ):
                     raise ValueError("Invalid profile")
                 identifier(profile["id"])
             if len({p["id"] for p in profiles}) != len(profiles):
@@ -282,10 +339,24 @@ def create_app(state_path: Path):
                 session = frame.get("session")
                 if session not in peer.sessions:
                     continue  # A late frame from a closed session is never replayed.
-                if frame.get("type") == "message" and set(frame) == {"type", "session", "message"}:
+                if frame.get("type") == "message" and set(frame) == {
+                    "type",
+                    "session",
+                    "message",
+                }:
                     message = JSONRPCMessage.model_validate(frame["message"])
-                    await asyncio.wait_for(peer.sessions[session].put(message.model_dump(mode="json", by_alias=True, exclude_none=True)), 10)
-                elif frame.get("type") == "closed" and set(frame) == {"type", "session"}:
+                    await asyncio.wait_for(
+                        peer.sessions[session].put(
+                            message.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            )
+                        ),
+                        10,
+                    )
+                elif frame.get("type") == "closed" and set(frame) == {
+                    "type",
+                    "session",
+                }:
                     await asyncio.wait_for(peer.sessions[session].put(None), 10)
                 else:
                     raise ValueError("Invalid relay frame")
@@ -306,13 +377,22 @@ def create_app(state_path: Path):
     async def mcp(scope, receive, send):
         request = Request(scope, receive)
         if not authorized(request.headers, hub.settings["proxy_token"]):
-            return await JSONResponse({"error": "Unauthorized"}, status_code=401)(scope, receive, send)
-        connector, profile = scope["path_params"]["connector"], scope["path_params"]["profile"]
+            return await JSONResponse({"error": "Unauthorized"}, status_code=401)(
+                scope, receive, send
+            )
+        connector, profile = (
+            scope["path_params"]["connector"],
+            scope["path_params"]["profile"],
+        )
         peer = hub.peers.get(connector)
         if peer is None or profile not in peer.profiles:
-            return await JSONResponse({"error": "Local connector unavailable"}, status_code=503)(scope, receive, send)
+            return await JSONResponse(
+                {"error": "Local connector unavailable"}, status_code=503
+            )(scope, receive, send)
         if not request.headers.get("mcp-session-id") and len(peer.sessions) >= 4:
-            return await JSONResponse({"error": "Session limit reached"}, status_code=429)(scope, receive, send)
+            return await JSONResponse(
+                {"error": "Session limit reached"}, status_code=429
+            )(scope, receive, send)
         manager = await hub.manager(connector, profile)
         await manager.handle_request(scope, receive, send)
 
@@ -320,12 +400,22 @@ def create_app(state_path: Path):
         async def __call__(self, scope, receive, send):
             await mcp(scope, receive, send)
 
-    app = Starlette(routes=[Route("/health", health), Route("/admin/connectors", admin),
-        Route("/admin/pairings", admin, methods=["POST"]),
-        Route("/admin/revoke", admin, methods=["POST"]),
-        Route("/pair", pair, methods=["POST"]),
-        WebSocketRoute("/connect/{connector}", channel),
-        Route("/mcp/{connector}/{profile}", MCPEndpoint(), methods=["GET", "POST", "DELETE"])], lifespan=lifespan)
+    app = Starlette(
+        routes=[
+            Route("/health", health),
+            Route("/admin/connectors", admin),
+            Route("/admin/pairings", admin, methods=["POST"]),
+            Route("/admin/revoke", admin, methods=["POST"]),
+            Route("/pair", pair, methods=["POST"]),
+            WebSocketRoute("/connect/{connector}", channel),
+            Route(
+                "/mcp/{connector}/{profile}",
+                MCPEndpoint(),
+                methods=["GET", "POST", "DELETE"],
+            ),
+        ],
+        lifespan=lifespan,
+    )
     app.add_middleware(LimitMiddleware)
     app.state.hub = hub
     return app

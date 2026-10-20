@@ -1,10 +1,11 @@
 """Host-only connector. The remote peer can name approved profiles, never commands."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import os
-import random
+import secrets
 import signal
 from pathlib import Path
 
@@ -22,7 +23,9 @@ def profiles(home: Path) -> dict[str, Profile]:
     data = read_json(home / "profiles.json")
     if len(data) > 32:
         raise ValueError("Approve at most 32 local MCP profiles")
-    return {identifier(key): Profile.model_validate(value) for key, value in data.items()}
+    return {
+        identifier(key): Profile.model_validate(value) for key, value in data.items()
+    }
 
 
 async def channel(home: Path, *, connected: asyncio.Event | None = None):
@@ -33,9 +36,17 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
     url = "ws" + endpoint[4:] + "/connect/" + key
     tasks: dict[str, asyncio.Task] = {}
     lock = asyncio.Lock()
-    async with connect(url, additional_headers={"Authorization": "Bearer " + config["token"]},
-                       proxy=None, max_size=MAX_BYTES, max_queue=16,
-                       ping_interval=20, ping_timeout=20, close_timeout=5) as ws:
+    async with connect(
+        url,
+        additional_headers={"Authorization": "Bearer " + config["token"]},
+        proxy=None,
+        max_size=MAX_BYTES,
+        max_queue=16,
+        ping_interval=20,
+        ping_timeout=20,
+        close_timeout=5,
+    ) as ws:
+
         async def send(frame):
             raw = json.dumps(frame, separators=(",", ":"))
             if len(raw.encode()) > MAX_BYTES:
@@ -43,12 +54,22 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
             async with lock:
                 await asyncio.wait_for(ws.send(raw), 10)
 
-        await send({"type": "hello", "protocol": PROTOCOL,
-                    "profiles": [{"id": key, "name": p.name} for key, p in approved.items()]})
+        await send(
+            {
+                "type": "hello",
+                "protocol": PROTOCOL,
+                "profiles": [
+                    {"id": key, "name": p.name} for key, p in approved.items()
+                ],
+            }
+        )
         ready = json.loads(await asyncio.wait_for(ws.recv(), 10))
         if ready != {"type": "ready", "protocol": PROTOCOL}:
             raise ValueError("Incompatible relay")
-        write_json(home / "connector-status.json", {"connected": True, "pid": os.getpid(), "profiles": len(approved)})
+        write_json(
+            home / "connector-status.json",
+            {"connected": True, "pid": os.getpid(), "profiles": len(approved)},
+        )
         if connected:
             connected.set()
         queues: dict[str, asyncio.Queue] = {}
@@ -57,37 +78,60 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
             pumps = []
             queue = queues[session]
             try:
-                params = StdioServerParameters(**approved[profile].model_dump(exclude={"name"}))
+                params = StdioServerParameters(
+                    **approved[profile].model_dump(exclude={"name"})
+                )
                 # Subprocess stderr can contain credentials or personal data.
                 with open(os.devnull, "w") as errors:
                     async with stdio_client(params, errlog=errors) as (read, write):
+
                         async def from_process():
                             async for message in read:
                                 if isinstance(message, Exception):
                                     break
-                                await send({"type": "message", "session": session,
-                                    "message": message.message.model_dump(mode="json", by_alias=True, exclude_none=True)})
+                                await send(
+                                    {
+                                        "type": "message",
+                                        "session": session,
+                                        "message": message.message.model_dump(
+                                            mode="json",
+                                            by_alias=True,
+                                            exclude_none=True,
+                                        ),
+                                    }
+                                )
 
                         async def to_process():
                             while (message := await queue.get()) is not None:
-                                await write.send(SessionMessage(JSONRPCMessage.model_validate(message)))
+                                await write.send(
+                                    SessionMessage(
+                                        JSONRPCMessage.model_validate(message)
+                                    )
+                                )
 
-                        pumps = [asyncio.create_task(from_process()), asyncio.create_task(to_process())]
+                        pumps = [
+                            asyncio.create_task(from_process()),
+                            asyncio.create_task(to_process()),
+                        ]
                         try:
-                            await asyncio.wait(pumps, return_when=asyncio.FIRST_COMPLETED)
+                            await asyncio.wait(
+                                pumps, return_when=asyncio.FIRST_COMPLETED
+                            )
                         finally:
                             # Exit the SDK's anyio context in the same task that entered it.
                             for pump in pumps:
                                 pump.cancel()
                             await asyncio.gather(*pumps, return_exceptions=True)
-            except Exception:
-                pass  # No commands, payloads or upstream error text in transport logs.
+            # Keep private subprocess and transport error text out of logs.
+            except Exception:  # nosec B110
+                pass
             finally:
                 queues.pop(session, None)
                 tasks.pop(session, None)
                 try:
                     await send({"type": "closed", "session": session})
-                except Exception:
+                # A closed notification is best effort after disconnect.
+                except Exception:  # nosec B110
                     pass
 
         try:
@@ -98,17 +142,30 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
                     raise ValueError("Invalid session")
                 kind = frame.get("type")
                 if kind == "open":
-                    if (set(frame) != {"type", "session", "profile"}
-                            or frame["profile"] not in approved or session in tasks or len(tasks) >= 4):
+                    if (
+                        set(frame) != {"type", "session", "profile"}
+                        or frame["profile"] not in approved
+                        or session in tasks
+                        or len(tasks) >= 4
+                    ):
                         raise ValueError("Unapproved local launch")
                     queues[session] = asyncio.Queue(maxsize=32)
-                    tasks[session] = asyncio.create_task(serve(session, frame["profile"]))
+                    tasks[session] = asyncio.create_task(
+                        serve(session, frame["profile"])
+                    )
                 elif kind == "message":
                     if set(frame) != {"type", "session", "message"}:
                         raise ValueError("Invalid relay message")
                     message = JSONRPCMessage.model_validate(frame["message"])
                     if session in queues:
-                        await asyncio.wait_for(queues[session].put(message.model_dump(mode="json", by_alias=True, exclude_none=True)), 10)
+                        await asyncio.wait_for(
+                            queues[session].put(
+                                message.model_dump(
+                                    mode="json", by_alias=True, exclude_none=True
+                                )
+                            ),
+                            10,
+                        )
                 elif kind == "close" and set(frame) == {"type", "session"}:
                     if task := tasks.get(session):
                         task.cancel()
@@ -133,14 +190,23 @@ async def run(home: Path):
             delay = 1
         except InvalidStatus as exc:
             if exc.response.status_code in {401, 403}:
-                write_json(home / "connector-status.json", {"connected": False, "error": "Pair this computer again"})
+                write_json(
+                    home / "connector-status.json",
+                    {"connected": False, "error": "Pair this computer again"},
+                )
                 return
         except (OSError, ValueError, TimeoutError):
-            write_json(home / "connector-status.json", {"connected": False, "error": "Relay unavailable"})
+            write_json(
+                home / "connector-status.json",
+                {"connected": False, "error": "Relay unavailable"},
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
-            write_json(home / "connector-status.json", {"connected": False, "error": "Connection interrupted"})
+            write_json(
+                home / "connector-status.json",
+                {"connected": False, "error": "Connection interrupted"},
+            )
         # Only the empty connection is retried. No MCP messages survive reconnect.
-        await asyncio.sleep(delay + random.random())
+        await asyncio.sleep(delay + secrets.randbelow(1000) / 1000)
         delay = min(delay * 2, 30)

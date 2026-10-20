@@ -1,4 +1,5 @@
 """Private, atomic local state. Launch approval lives exclusively on the host."""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +16,9 @@ ID = re.compile(r"[a-z][a-z0-9-]{0,47}\Z")
 
 def identifier(value: str) -> str:
     if not ID.fullmatch(value):
-        raise ValueError("Use a lowercase name starting with a letter, up to 48 characters")
+        raise ValueError(
+            "Use a lowercase name starting with a letter, up to 48 characters"
+        )
     return value
 
 
@@ -25,11 +28,21 @@ def local_endpoint(value: str) -> str:
         port = parsed.port
     except ValueError:
         raise ValueError("Invalid service port") from None
-    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
-            or parsed.username is not None or parsed.password is not None
-            or parsed.query or parsed.fragment or parsed.path not in {"", "/"}
-            or port is None or port == 0 or any(c.isspace() for c in value)):
-        raise ValueError("This release supports an explicit HTTP loopback address and port only")
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+        or port is None
+        or port == 0
+        or any(c.isspace() for c in value)
+    ):
+        raise ValueError(
+            "This release supports an explicit HTTP loopback address and port only"
+        )
     return value.rstrip("/")
 
 

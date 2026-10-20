@@ -3,6 +3,11 @@
 ```sh
 uv sync --frozen --group dev
 uv run pytest
+uv run ruff check src scripts tests
+uv run ruff format --check src scripts tests
+uv run bandit --recursive src
+uv run pytest --cov=openmaskit_companion --cov-branch --cov-report=xml
+swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
 swift build --package-path desktop/macos
 swift test --package-path desktop/macos
 uv run --group bundle python scripts/bundle.py

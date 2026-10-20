@@ -1,0 +1,64 @@
+name: Code quality and coverage
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflows:
+    name: GitHub workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify and run Actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' \
+            8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 \
+            "$archive" | sha256sum --check --status
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
+
+  python:
+    name: Python quality and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4
+        with:
+          version: '0.13.1'
+      - run: uv sync --frozen --python 3.12 --group dev
+      - name: Lint Python source, scripts and tests
+        run: uv run --frozen ruff check src scripts tests
+      - name: Check Python formatting
+        run: uv run --frozen ruff format --check src scripts tests
+      - name: Analyze production Python security
+        run: uv run --frozen bandit --recursive src --format json --output bandit.json
+      - name: Enforce coverage threshold including branches
+        run: uv run --frozen pytest -q --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+      - name: Export all locked dependencies for auditing
+        run: uv export --frozen --all-groups --no-emit-project --format requirements-txt > requirements-audit.txt
+      - name: Audit locked runtime and development dependencies
+        run: uv run --frozen pip-audit --disable-pip --require-hashes --strict --requirement requirements-audit.txt --format json --output pip-audit.json
+      - name: Retain quality and coverage reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-quality-reports
+          path: |
+            coverage.xml
+            htmlcov/
+            bandit.json
+            pip-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
