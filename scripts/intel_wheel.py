@@ -42,9 +42,56 @@ def digest(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def locked_openssl():
+    source = json.loads((ROOT / "dependencies/openssl.json").read_text())
+    version = source["version"]
+    if (
+        not re.fullmatch(r"\d+\.\d+\.\d+", version)
+        or source["url"]
+        != (
+            "https://github.com/openssl/openssl/releases/download/"
+            f"openssl-{version}/openssl-{version}.tar.gz"
+        )
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", source["hash"])
+    ):
+        raise ValueError("Invalid locked OpenSSL source")
+    return source
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ValueError("Source download redirects are forbidden")
+
+
+class GitHubReleaseRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        url = urllib.parse.urlsplit(newurl)
+        if url.scheme != "https" or url.netloc not in {
+            "github.com",
+            "release-assets.githubusercontent.com",
+        }:
+            raise ValueError("OpenSSL download redirected outside GitHub HTTPS assets")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_openssl(directory):
+    source = locked_openssl()
+    directory.mkdir(parents=True, exist_ok=False)
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), GitHubReleaseRedirect()
+    )
+    with opener.open(source["url"], timeout=60) as response:
+        content = response.read(64 * 1024 * 1024 + 1)
+    if len(content) != source["size"]:
+        raise ValueError("OpenSSL source size does not match lockfile")
+    if "sha256:" + hashlib.sha256(content).hexdigest() != source["hash"]:
+        raise ValueError("OpenSSL source checksum does not match lockfile")
+    archive = directory / "source.tar.gz"
+    archive.write_bytes(content)
+    with tarfile.open(archive) as package:
+        package.extractall(directory / "source", filter="data")
+    upstream = directory / "source" / f"openssl-{source['version']}"
+    upstream.rename(directory / "upstream")
 
 
 def fetch(directory):
@@ -104,6 +151,8 @@ def manifest(directory, commit):
         "source_sha256": source["hash"].removeprefix("sha256:"),
         "wheel": wheel.name,
         "wheel_sha256": digest(wheel),
+        "openssl_version": locked_openssl()["version"],
+        "openssl_source_sha256": locked_openssl()["hash"].removeprefix("sha256:"),
     }
 
 
@@ -131,6 +180,8 @@ def sbom(directory):
     match = re.fullmatch(r"OpenSSL (\d+\.\d+\.\d+[a-z]?) .+", text)
     if not match:
         raise ValueError("Cannot identify embedded OpenSSL for vulnerability scan")
+    if match[1] != locked_openssl()["version"]:
+        raise ValueError("Native wheel did not link the pinned OpenSSL release")
     components = [
         {
             "type": "library",
@@ -158,7 +209,9 @@ def sbom(directory):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("fetch", "seal", "prepare", "sbom"))
+    parser.add_argument(
+        "operation", choices=("fetch", "fetch-openssl", "seal", "prepare", "sbom")
+    )
     parser.add_argument("directory", type=Path)
     args = parser.parse_args()
     if args.operation in ("seal", "prepare"):
@@ -166,7 +219,9 @@ def main():
             args.directory, os.environ.get("GITHUB_SHA", "")
         )
     else:
-        {"fetch": fetch, "sbom": sbom}[args.operation](args.directory)
+        {"fetch": fetch, "fetch-openssl": fetch_openssl, "sbom": sbom}[args.operation](
+            args.directory
+        )
 
 
 if __name__ == "__main__":

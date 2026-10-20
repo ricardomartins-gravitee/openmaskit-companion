@@ -84,6 +84,10 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     assert "--only-group intel-build" in commands
     assert "uv build" in commands and "--no-build-isolation" in commands
     assert "scripts/intel_wheel.py fetch" in commands
+    assert "scripts/intel_wheel.py fetch-openssl" in commands
+    assert "./Configure darwin64-x86_64-cc no-shared no-module" in commands
+    assert "HARNESS_JOBS=3 make test" in commands
+    assert "brew" not in commands
     assert "scripts/intel_wheel.py seal" in commands
     assert "scripts/test_crypto.py" in commands
     assert "scripts/intel_wheel.py sbom" in commands

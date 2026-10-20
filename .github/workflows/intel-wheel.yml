@@ -10,7 +10,7 @@ jobs:
   wheel:
     name: Build and verify Intel dependency
     runs-on: macos-15-intel
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       OPENSSL_STATIC: '1'
@@ -40,11 +40,21 @@ jobs:
       - name: Print redacted upstream scan summary
         if: always()
         run: python3 scripts/security_report.py "$RUNNER_TEMP/trivy-report.json"
+      - name: Download and verify pinned OpenSSL LTS source
+        run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py fetch-openssl "$RUNNER_TEMP/openssl-build"
+      - name: Build static OpenSSL and run its upstream test suite
+        working-directory: ${{ runner.temp }}/openssl-build/upstream
+        run: |
+          set -euo pipefail
+          ./Configure darwin64-x86_64-cc no-shared no-module --libdir=lib \
+            --prefix="$RUNNER_TEMP/openssl-install" -mmacosx-version-min=14.0
+          make -j3
+          HARNESS_JOBS=3 make test
+          make install_sw
       - name: Explicitly compile the verified source with locked build tools
         run: |
           set -euo pipefail
-          OPENSSL_DIR="$(brew --prefix openssl@3)"
-          export OPENSSL_DIR
+          export OPENSSL_DIR="$RUNNER_TEMP/openssl-install"
           uv build "$RUNNER_TEMP/crypto-build/source.tar.gz" --wheel --no-build-isolation \
             --python .venv/bin/python --out-dir "$RUNNER_TEMP/intel-wheel"
           {

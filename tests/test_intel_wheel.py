@@ -43,7 +43,15 @@ def test_verified_wheel_generates_hash_required_direct_file_requirement(tmp_path
 
 
 @pytest.mark.parametrize(
-    "change", ["commit", "version", "source_sha256", "wheel_sha256"]
+    "change",
+    [
+        "commit",
+        "version",
+        "source_sha256",
+        "wheel_sha256",
+        "openssl_version",
+        "openssl_source_sha256",
+    ],
 )
 def test_rejects_wheel_from_other_commit_lockfile_or_checksum(tmp_path, change):
     make_wheel(tmp_path)
@@ -181,3 +189,101 @@ def test_source_build_must_enforce_cargo_lock(tmp_path, monkeypatch):
 def test_source_redirects_are_rejected():
     with pytest.raises(ValueError, match="redirects are forbidden"):
         wheel.NoRedirect().redirect_request(None, None, 302, "", {}, "http://other")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://release-assets.githubusercontent.com/file",
+        "file:///tmp/source",
+        "https://github.com.example.org/file",
+        "https://other.example/file",
+        "https://user@github.com/file",
+    ],
+)
+def test_openssl_redirects_are_limited_to_github_https_assets(url):
+    with pytest.raises(ValueError, match="outside GitHub HTTPS"):
+        wheel.GitHubReleaseRedirect().redirect_request(None, None, 302, "", {}, url)
+
+
+def test_github_release_asset_redirect_is_allowed():
+    request = wheel.urllib.request.Request("https://github.com/openssl/openssl/file")
+    result = wheel.GitHubReleaseRedirect().redirect_request(
+        request, None, 302, "", {}, "https://release-assets.githubusercontent.com/file"
+    )
+    assert result.full_url == "https://release-assets.githubusercontent.com/file"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("version", "../bad"),
+        ("url", "http://github.com/file"),
+        ("hash", "sha256:invalid"),
+    ],
+)
+def test_invalid_openssl_lock_is_rejected(tmp_path, monkeypatch, field, value):
+    source = wheel.locked_openssl()
+    source[field] = value
+    (tmp_path / "dependencies").mkdir()
+    (tmp_path / "dependencies/openssl.json").write_text(json.dumps(source))
+    monkeypatch.setattr(wheel, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="Invalid locked OpenSSL"):
+        wheel.locked_openssl()
+
+
+@pytest.mark.parametrize("failure", [None, "size", "checksum"])
+def test_openssl_source_verification_precedes_extraction(
+    tmp_path, monkeypatch, failure
+):
+    source = wheel.locked_openssl()
+    content = source_archive(
+        {f"openssl-{source['version']}/Configure": b"upstream input"}
+    )
+    source["size"] = len(content) + (1 if failure == "size" else 0)
+    source["hash"] = "sha256:" + (
+        "0" * 64 if failure == "checksum" else hashlib.sha256(content).hexdigest()
+    )
+    monkeypatch.setattr(wheel, "locked_openssl", lambda: source)
+
+    class Opener:
+        def open(self, url, timeout):
+            assert url == source["url"] and timeout == 60
+            return io.BytesIO(content)
+
+    monkeypatch.setattr(wheel.urllib.request, "build_opener", lambda *args: Opener())
+    directory = tmp_path / "build"
+    if failure:
+        with pytest.raises(ValueError, match="does not match lockfile"):
+            wheel.fetch_openssl(directory)
+        assert not (directory / "upstream").exists()
+    else:
+        wheel.fetch_openssl(directory)
+        assert (directory / "upstream/Configure").read_bytes() == b"upstream input"
+
+
+def test_sbom_uses_exact_native_openssl_version_and_cpe(tmp_path, monkeypatch):
+    from cryptography.hazmat.backends.openssl.backend import backend
+
+    version = wheel.locked_openssl()["version"]
+    monkeypatch.setattr(
+        backend, "openssl_version_text", lambda: f"OpenSSL {version} date"
+    )
+    wheel.sbom(tmp_path)
+    data = json.loads((tmp_path / "sbom.json").read_text())
+    openssl = next(c for c in data["components"] if c["name"] == "openssl")
+    assert openssl["version"] == version
+    assert openssl["cpe"] == f"cpe:2.3:a:openssl:openssl:{version}:*:*:*:*:*:*:*"
+
+
+@pytest.mark.parametrize(
+    "version", ["LibreSSL 1.2.3", "OpenSSL 3.6.3 old runner library"]
+)
+def test_sbom_rejects_wrong_or_unrecognized_native_openssl(
+    tmp_path, monkeypatch, version
+):
+    from cryptography.hazmat.backends.openssl.backend import backend
+
+    monkeypatch.setattr(backend, "openssl_version_text", lambda: version)
+    with pytest.raises(ValueError):
+        wheel.sbom(tmp_path)

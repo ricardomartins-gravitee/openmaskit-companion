@@ -23,20 +23,25 @@ downloads an executable artifact from another workflow or a previous PR run.
    does not apply credential rules to upstream documentation examples containing
    published test private keys. Our repository/history and final image have
    their own blocking secret scans.
-4. Explicitly build that verified source with `uv build --no-build-isolation`,
-   using the already installed Python build tools. This is the only third-party
-   compilation step. macOS deployment target is 14.0 and OpenSSL is statically
-   linked from the hosted runner's Homebrew installation.
+4. Download OpenSSL 3.5.9 LTS from its official GitHub release, using the source
+   URL, size and SHA-256 in `dependencies/openssl.json`. Allow redirects only to
+   GitHub's HTTPS release asset host and verify the source before extraction.
+   Compile static libraries for Intel macOS 14+, run the full upstream OpenSSL
+   test suite, and install only into the job's temporary directory. Build
+   cryptography with `uv build --no-build-isolation`, using the already installed
+   Python build tools and that private static OpenSSL installation. These two
+   explicit compilation steps never use the runner's Homebrew OpenSSL.
 5. Require one Intel macOS wheel with the exact locked package name/version in
    both its filename and embedded metadata. Record the Git commit, source hash
-   and built wheel hash in a manifest.
+   and built wheel hash in a manifest, together with OpenSSL's version/source hash.
 6. Install only that checksummed wheel, with dependency resolution and source
    builds disabled. Test AES-GCM against a known vector, Fernet encryption,
    Ed25519/RSA signing and PEM loading, plus rejection of tampered inputs.
    Inspect the Mach-O links: only system libraries are allowed as dependencies,
    so a download does not depend on the CI runner's Homebrew paths.
 7. Read the actual embedded OpenSSL version from the native module and generate
-   a small CycloneDX SBOM. Trivy checks the Python package. Grype checks the
+   a small CycloneDX SBOM, requiring that version to match the pinned LTS release.
+   Trivy checks the Python package. Grype checks the
    explicit OpenSSL CPE, since Trivy does not recognize its generic package URL.
    Both checks fail on HIGH/CRITICAL findings, including unfixed findings. Scan
    errors fail the job. No findings are dismissed to permit publication.
@@ -50,17 +55,22 @@ downloads an executable artifact from another workflow or a previous PR run.
 
 ## Maintenance and limits
 
-Python build inputs and upstream Rust dependencies are locked. The Xcode/Rust
-toolchains and Homebrew OpenSSL follow the GitHub runner image; their versions
-are recorded in the artifact. This is not a claim of bit-for-bit reproducibility
+Python build inputs, upstream Rust dependencies and OpenSSL source are locked.
+The Xcode/Rust toolchains follow the GitHub runner image; their versions are
+recorded in the artifact. This is not a claim of bit-for-bit reproducibility
 across different runner images. The OpenSSL scan uses the version actually
-linked, rather than assuming the Homebrew formula version matches the binary.
+linked and rejects accidental linkage to an unpinned runner library.
 
 The SBOM describes cryptography and its embedded OpenSSL. It is not a complete
 SBOM for the app or a substitute for the separate runtime/build dependency audit,
 upstream Rust scan, repository scans and final container scans. Static linking
 requires a rebuild to deliver OpenSSL fixes; every workflow run creates a fresh
 wheel and reruns the checks. There is no scheduled local task or local updater.
+OpenSSL source updates require a reviewed change to `dependencies/openssl.json`;
+the dependency scans block a release when the pinned version acquires a known
+HIGH/CRITICAL advisory. The 3.5 LTS series is maintained until April 2030; its
+current releases and lifecycle are listed on the
+[official download page](https://openssl-library.org/source/).
 
 If a future cryptography update changes the backend requirements, removes its
 Cargo lockfile, changes its version format or produces a different platform tag,
