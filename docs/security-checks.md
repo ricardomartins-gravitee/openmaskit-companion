@@ -31,6 +31,10 @@ acceptance or publication. HIGH/CRITICAL vulnerabilities and secrets block the
 image; unfixed findings are included. Scan reports stay private to the ephemeral
 runner. A tested report helper prints only counts and validated advisory IDs.
 Missing or malformed reports fail rather than appearing clean.
+The report reader accepts only the two fixed Trivy JSON filenames inside
+`RUNNER_TEMP`, rejects symlinks and other locations, and limits input to 16 MiB.
+Release downloads require HTTPS for the initial request and every redirect,
+as well as verifying the archive checksum.
 
 ## Code quality and test coverage
 
@@ -48,6 +52,11 @@ The independent reusable quality workflow locks its tools in `uv.lock` and runs:
   from `uv.lock`, retaining their hashes. Any known vulnerability fails this
   check, including severities below Trivy's HIGH/CRITICAL threshold.
 
+CI installation disallows building third-party source distributions. Commands
+after installation use `uv run --no-sync --no-build` to avoid implicit dependency
+resynchronization. The first-party project itself is still built from the reviewed
+checkout, including during the container build.
+
 Native macOS jobs additionally enforce Apple's `swift format` lint before
 running the native tests. GitHub workflow syntax is validated in CI with
 Actionlint 1.7.12, whose release archive is SHA-256 verified. Configuration tests ensure actions remain pinned,
@@ -58,9 +67,11 @@ matrix. Images and downloads are published only after these checks, all platform
 tests, image scans and real-container acceptance have passed. A runner allocation
 failure is a failed gate and is retried, never treated as a successful test.
 
-[SonarQube Cloud setup](sonarqube.md) adds a hosted quality dashboard after the
-repository is connected. Its workflow is currently inactive until the required
-project variables and secret are configured; it is not counted as a passing gate.
+The public repository is connected to [SonarQube Cloud](https://sonarcloud.io/project/overview?id=ricardomartins-gravitee_openmaskit-companion)
+on the free OSS plan. Its GitHub App runs automatic analysis on the default
+branch and active pull requests. This hosted analysis is separate from the
+blocking quality/security workflow above and does not import coverage reports.
+See [SonarQube setup](sonarqube.md) for details.
 
 Credentials are generated with Python's `secrets` module rather than a static
 value or a predictable random generator. Scanners detect accidental disclosure;

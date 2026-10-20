@@ -30,8 +30,8 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.1'
-      - run: uv sync --frozen --python 3.12 --group dev
-      - run: uv run --frozen pytest -q
+      - run: uv sync --frozen --no-build --python 3.12 --group dev
+      - run: uv run --frozen --no-sync --no-build pytest -q
       - if: runner.os == 'macOS'
         name: Lint Swift sources and tests
         run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
@@ -56,7 +56,7 @@ jobs:
         with:
           version: '0.13.1'
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - run: uv sync --frozen --python 3.12 --group dev
+      - run: uv sync --frozen --no-build --python 3.12 --group dev
       - name: Build native image
         run: docker buildx build --load --provenance=false --pull --tag openmaskit-companion:candidate .
       - name: Scan the actual image for vulnerabilities and secrets
@@ -76,7 +76,7 @@ jobs:
         if: always()
         run: python3 scripts/security_report.py "${{ runner.temp }}/trivy-image.json"
       - name: Real OpenMaskit, Presidio and host MCP acceptance
-        run: uv run --frozen python scripts/container_acceptance.py --image openmaskit-companion:candidate
+        run: uv run --frozen --no-sync --no-build python scripts/container_acceptance.py --image openmaskit-companion:candidate
       - name: Save tested image
         if: github.event_name != 'pull_request'
         run: docker save openmaskit-companion:candidate | gzip > image.tar.gz
@@ -150,26 +150,26 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.1'
-      - run: uv sync --frozen --python 3.12 --group dev --group bundle
+      - run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle
       - name: Exercise actual managed installation lifecycle
         if: runner.os == 'Linux'
         env:
           RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen python scripts/manager_acceptance.py --image "$RELAY_IMAGE"
+        run: uv run --frozen --no-sync --no-build python scripts/manager_acceptance.py --image "$RELAY_IMAGE"
       - name: Build development download
         env:
           RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen python scripts/bundle.py --image "$env:RELAY_IMAGE"
+        run: uv run --frozen --no-sync --no-build python scripts/bundle.py --image "$env:RELAY_IMAGE"
         if: runner.os == 'Windows'
       - name: Build development download
         env:
           RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen python scripts/bundle.py --image "$RELAY_IMAGE"
+        run: uv run --frozen --no-sync --no-build python scripts/bundle.py --image "$RELAY_IMAGE"
         if: runner.os != 'Windows'
       - name: Exercise the bundled connector
-        run: uv run --frozen python scripts/test_bundle.py
+        run: uv run --frozen --no-sync --no-build python scripts/test_bundle.py
       - name: Archive development downloads and checksums
-        run: uv run --frozen python scripts/archive.py
+        run: uv run --frozen --no-sync --no-build python scripts/archive.py
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/downloads/*

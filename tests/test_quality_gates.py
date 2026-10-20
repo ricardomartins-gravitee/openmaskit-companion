@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import sys
@@ -46,18 +47,46 @@ def test_coverage_gate_includes_all_production_code_and_branches():
     assert "omit" not in config["run"]
 
 
-def report_summary(path):
+def test_ci_disallows_dependency_source_builds_and_implicit_resynchronization():
+    for name in ("validate.yml", "quality.yml"):
+        for job in workflow(name)["jobs"].values():
+            for step in job.get("steps", []):
+                for command in re.findall(
+                    r"\buv (?:sync|run)\b[^\n]*", step.get("run", "")
+                ):
+                    assert "--no-build" in command
+                    if command.startswith("uv run"):
+                        assert "--no-sync" in command
+    assert "uv sync --frozen --no-build" in (ROOT / "Dockerfile").read_text()
+
+
+def test_scanner_downloads_enforce_https_across_redirects():
+    for name in ("quality.yml", "security.yml"):
+        for job in workflow(name)["jobs"].values():
+            for step in job.get("steps", []):
+                command = step.get("run", "")
+                if "curl " in command:
+                    assert "--proto '=https'" in command
+                    assert "--proto-redir '=https'" in command
+                    assert "--insecure" not in command
+
+
+def report_summary(path, *, root=None, remove_root=False):
+    environment = {**os.environ, "RUNNER_TEMP": str(root or path.parent)}
+    if remove_root:
+        environment.pop("RUNNER_TEMP")
     return subprocess.run(
         [sys.executable, str(ROOT / "scripts/security_report.py"), str(path)],
         capture_output=True,
         text=True,
         timeout=10,
+        env=environment,
     )
 
 
 def test_security_summary_withholds_secrets_source_and_untrusted_identifiers(tmp_path):
     private = "synthetic-private-value-must-not-be-printed"
-    report = tmp_path / "report.json"
+    report = tmp_path / "trivy-report.json"
     report.write_text(
         json.dumps(
             {
@@ -89,7 +118,7 @@ def test_security_summary_withholds_secrets_source_and_untrusted_identifiers(tmp
 def test_security_summary_fails_closed_without_dumping_malformed_reports(
     tmp_path, content
 ):
-    report = tmp_path / "report.json"
+    report = tmp_path / "trivy-report.json"
     report.write_text(content)
     result = report_summary(report)
     assert result.returncode == 1
@@ -100,6 +129,44 @@ def test_security_summary_fails_closed_without_dumping_malformed_reports(
 
 
 def test_security_summary_missing_report_is_not_success(tmp_path):
-    result = report_summary(tmp_path / "missing.json")
+    result = report_summary(tmp_path / "trivy-image.json")
     assert result.returncode == 1
     assert result.stderr == ""
+
+
+def test_security_summary_rejects_paths_outside_runner_temp(tmp_path):
+    root = tmp_path / "runner"
+    root.mkdir()
+    outside = tmp_path / "trivy-report.json"
+    outside.write_text('{"Results":[]}')
+    assert report_summary(outside, root=root).returncode == 1
+
+
+def test_security_summary_rejects_unapproved_report_names(tmp_path):
+    path = tmp_path / "other.json"
+    path.write_text('{"Results":[]}')
+    assert report_summary(path).returncode == 1
+
+
+def test_security_summary_requires_runner_temp(tmp_path):
+    path = tmp_path / "trivy-report.json"
+    path.write_text('{"Results":[]}')
+    assert report_summary(path, remove_root=True).returncode == 1
+
+
+def test_security_summary_rejects_symbolic_links(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text('{"Results":[]}')
+    path = tmp_path / "trivy-report.json"
+    try:
+        path.symlink_to(target)
+    except OSError:
+        pytest.skip("Symbolic links are unavailable for this Windows account")
+    assert report_summary(path).returncode == 1
+
+
+def test_security_summary_rejects_oversized_reports(tmp_path):
+    path = tmp_path / "trivy-report.json"
+    with path.open("wb") as report:
+        report.truncate(16 * 1024 * 1024 + 1)
+    assert report_summary(path).returncode == 1

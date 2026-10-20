@@ -94,8 +94,9 @@ No claim of Apple signing/notarization is made for development artifacts.
 
 Publication also requires [code quality and security checks](docs/security-checks.md):
 Trivy, Gitleaks, Ruff, Bandit, dependency auditing, native Swift lint, and measured
-test coverage. [SonarQube Cloud integration](docs/sonarqube.md) is prepared for a
-hosted dashboard and requires a one-time service connection.
+test coverage. The repository also has an active [SonarQube Cloud project](https://sonarcloud.io/project/overview?id=ricardomartins-gravitee_openmaskit-companion)
+using automatic analysis on the default branch and active pull requests. It does
+not import the coverage report; see [the SonarQube setup](docs/sonarqube.md).
 
 This project's initial scope is macOS with Docker Desktop on the same computer.
 The connector core is portable; remote deployments, native Windows/Linux apps,

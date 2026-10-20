@@ -1,14 +1,39 @@
 """Print scanner counts and advisory IDs, never source excerpts or secret values."""
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+MAX_REPORT_BYTES = 16 * 1024 * 1024
+
+
+def read_report():
+    # Only fixed scanner outputs inside the trusted runner temp directory are read.
+    root = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
+    allowed = {
+        "trivy-report.json": root / "trivy-report.json",
+        "trivy-image.json": root / "trivy-image.json",
+    }
+    requested = Path(sys.argv[1])
+    report_path = allowed[requested.name]
+    if (
+        requested != report_path
+        or report_path.is_symlink()
+        or not report_path.is_file()
+    ):
+        raise ValueError("Invalid scanner report")
+    with report_path.open("rb") as report_file:
+        raw = report_file.read(MAX_REPORT_BYTES + 1)
+    if len(raw) > MAX_REPORT_BYTES:
+        raise ValueError("Scanner report too large")
+    return json.loads(raw)
+
 
 def main():
     try:
-        report = json.loads(Path(sys.argv[1]).read_text())
+        report = read_report()
         results = report.get("Results") or []
         counts = {
             key: sum(len(result.get(key) or []) for result in results)
@@ -24,7 +49,7 @@ def main():
             for item in advisory_ids
             if re.fullmatch(r"(?:CVE-\d{4}-\d{4,}|GHSA-[a-z0-9-]{14})", item)
         )
-    except (OSError, ValueError, AttributeError, TypeError, IndexError):
+    except (OSError, ValueError, AttributeError, TypeError, IndexError, KeyError):
         print("Scanner report unavailable or invalid; contents withheld.")
         return 1
     print(
