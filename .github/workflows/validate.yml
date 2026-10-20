@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.1'
       - run: uv sync --frozen --python 3.12 --group dev
@@ -43,7 +43,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.1'
       - uses: docker/setup-buildx-action@v3
@@ -122,7 +122,7 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.1'
       - run: uv sync --frozen --python 3.12 --group dev --group bundle
