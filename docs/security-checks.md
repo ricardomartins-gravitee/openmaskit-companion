@@ -52,8 +52,11 @@ The independent reusable quality workflow locks its tools in `uv.lock` and runs:
   from `uv.lock`, retaining their hashes. Any known vulnerability fails this
   check, including severities below Trivy's HIGH/CRITICAL threshold.
 
-CI installation disallows building third-party source distributions. Commands
-after installation use `uv run --no-sync --no-build` to avoid implicit dependency
+CI installation disallows building third-party source distributions except in
+the explicit Intel macOS installation steps: the locked cryptography release
+has no compatible binary wheel there and must compile. Those steps still use
+the frozen, hash-pinned dependency lockfile. Commands after installation use
+`uv run --no-sync --no-build` to avoid implicit dependency
 resynchronization. The first-party project itself is still built from the reviewed
 checkout, including during the container build.
 

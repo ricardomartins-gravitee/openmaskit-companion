@@ -54,9 +54,14 @@ def test_ci_disallows_dependency_source_builds_and_implicit_resynchronization():
                 for command in re.findall(
                     r"\buv (?:sync|run)\b[^\n]*", step.get("run", "")
                 ):
-                    assert "--no-build" in command
+                    assert "--frozen" in command
+                    if "--no-build" not in command:
+                        assert name == "validate.yml"
+                        assert step.get("if") == "matrix.os == 'macos-15-intel'"
+                        assert command.startswith("uv sync")
                     if command.startswith("uv run"):
                         assert "--no-sync" in command
+                        assert "--no-build" in command
     assert "uv sync --frozen --no-build" in (ROOT / "Dockerfile").read_text()
 
 
