@@ -4,7 +4,7 @@ version = "0.1.0a1"
 description = "Desktop manager and outbound local MCP connector for OpenMaskit"
 requires-python = ">=3.12"
 license = "Apache-2.0"
-dependencies = ["mcp>=1.27,<2", "starlette>=0.49,<1", "uvicorn[standard]>=0.38,<1", "httpx>=0.28,<1", "websockets>=15,<17", "pydantic>=2.12,<3"]
+dependencies = ["mcp>=1.27,<2", "starlette>=0.49,<1", "uvicorn[standard]>=0.38,<1", "httpx>=0.28,<1", "websockets>=15,<18", "pydantic>=2.12,<3"]
 
 [project.scripts]
 openmaskit-companion = "openmaskit_companion.cli:main"
