@@ -33,7 +33,7 @@ def make_wheel(directory, *, name=None, metadata=None):
 def test_verified_wheel_generates_hash_required_direct_file_requirement(tmp_path):
     path = make_wheel(tmp_path)
     wheel.seal(tmp_path, COMMIT)
-    wheel.prepare(tmp_path, COMMIT)
+    wheel.prepare(tmp_path)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
     assert manifest["source_sha256"] == SOURCE["hash"].removeprefix("sha256:")
     assert manifest["wheel_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
@@ -60,8 +60,8 @@ def test_rejects_wheel_from_other_commit_lockfile_or_checksum(tmp_path, change):
     manifest = json.loads(path.read_text())
     manifest[change] = "untrusted"
     path.write_text(json.dumps(manifest))
-    with pytest.raises(ValueError, match="not from this source"):
-        wheel.prepare(tmp_path, COMMIT)
+    with pytest.raises(ValueError):
+        wheel.prepare(tmp_path)
     assert not (tmp_path / "install.txt").exists()
 
 
@@ -70,8 +70,8 @@ def test_modified_wheel_is_rejected(tmp_path):
     wheel.seal(tmp_path, COMMIT)
     with path.open("ab") as target:
         target.write(b"modified")
-    with pytest.raises(ValueError, match="not from this source"):
-        wheel.prepare(tmp_path, COMMIT)
+    with pytest.raises(ValueError, match="does not match"):
+        wheel.prepare(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -103,7 +103,7 @@ def test_requires_one_wheel_full_commit_and_manifest(tmp_path):
     with pytest.raises(ValueError, match="full source commit"):
         wheel.seal(tmp_path, "short")
     with pytest.raises(FileNotFoundError):
-        wheel.prepare(tmp_path, COMMIT)
+        wheel.prepare(tmp_path)
     make_wheel(
         tmp_path, name=f"cryptography-{VERSION}-cp312-abi3-macosx_14_0_x86_64.whl"
     )

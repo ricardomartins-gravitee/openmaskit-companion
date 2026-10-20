@@ -53,15 +53,20 @@ The independent reusable quality workflow locks its tools in `uv.lock` and runs:
   check, including severities below Trivy's HIGH/CRITICAL threshold.
 
 All CI dependency installation disallows source builds. Intel macOS uses a
-dedicated [cryptography wheel build](intel-wheel.md): an explicit compilation of
-the hash-verified upstream source, using locked binary Python build tools and
-the upstream Cargo lockfile. Trivy scans its Rust inputs and Python component;
+dedicated [cryptography wheel build](intel-wheel.md). It restores a matching
+attested GitHub release; compilation of the verified source and pinned OpenSSL
+runs only on a miss. Python build tools and Rust dependencies are locked.
+Trivy scans its Rust inputs and Python component on every run;
 Grype 0.121.0 additionally checks the embedded OpenSSL version using its CPE.
 Native cryptographic vectors, tamper rejection and static linkage must pass
 before the wheel is shared with tests and packaging in the same workflow run.
-Consumers verify the commit, source checksum, wheel metadata and wheel checksum,
+Consumers verify provenance, the build-input key, original source manifest,
+wheel metadata and checksums,
 then install that wheel with `--no-build --no-deps --require-hashes`.
 There are no SonarQube exceptions for source installation.
+The one-time seed is restricted to the exact successful producer job, source
+revision and wheel hash pinned in `dependencies/intel-bootstrap.json`. Main-only
+publication promotes that reviewed build into the durable attested release.
 
 Commands after installation use `uv run --no-sync --no-build` to avoid implicit
 dependency resynchronization. The first-party project itself is still built

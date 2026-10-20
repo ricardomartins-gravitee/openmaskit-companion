@@ -2,15 +2,22 @@ name: Build Intel cryptography wheel
 
 on:
   workflow_call:
+    outputs:
+      build-key:
+        value: ${{ jobs.wheel.outputs.build-key }}
 
 permissions:
   contents: read
+  attestations: read
+  actions: read
 
 jobs:
   wheel:
     name: Build and verify Intel dependency
     runs-on: macos-15-intel
     timeout-minutes: 30
+    outputs:
+      build-key: ${{ steps.restore.outputs.build-key }}
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       OPENSSL_STATIC: '1'
@@ -22,6 +29,11 @@ jobs:
           enable-cache: 'false'
       - name: Install only locked binary build tools
         run: uv sync --frozen --no-build --python 3.12 --only-group intel-build
+      - name: Restore the matching attested native library if published
+        id: restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py restore "$RUNNER_TEMP/intel-wheel"
       - name: Download and verify locked upstream source
         run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py fetch "$RUNNER_TEMP/crypto-build"
       - name: Scan locked upstream dependencies
@@ -41,32 +53,17 @@ jobs:
         if: always()
         run: python3 scripts/security_report.py "$RUNNER_TEMP/trivy-report.json"
       - name: Download and verify pinned OpenSSL LTS source
+        if: steps.restore.outputs.reused != 'true'
         run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py fetch-openssl "$RUNNER_TEMP/openssl-build"
-      - name: Build static OpenSSL and run its upstream test suite
-        working-directory: ${{ runner.temp }}/openssl-build/upstream
-        run: |
-          set -euo pipefail
-          ./Configure darwin64-x86_64-cc no-shared no-module --libdir=lib \
-            --prefix="$RUNNER_TEMP/openssl-install" -mmacosx-version-min=14.0
-          make -j3
-          HARNESS_JOBS=3 make test
-          make install_sw
-      - name: Explicitly compile the verified source with locked build tools
-        run: |
-          set -euo pipefail
-          export OPENSSL_DIR="$RUNNER_TEMP/openssl-install"
-          uv build "$RUNNER_TEMP/crypto-build/source.tar.gz" --wheel --no-build-isolation \
-            --python .venv/bin/python --out-dir "$RUNNER_TEMP/intel-wheel"
-          {
-            rustc --version
-            cargo --version
-            clang --version
-            "$OPENSSL_DIR/bin/openssl" version
-            sw_vers
-          } > "$RUNNER_TEMP/intel-wheel/toolchain.txt"
+      - name: Build and test the native libraries only when no matching release exists
+        if: steps.restore.outputs.reused != 'true'
+        run: bash scripts/build_intel_dependencies.sh
       - name: Seal wheel against this commit and lockfile
+        if: steps.restore.outputs.reused != 'true'
         run: |
           uv run --frozen --no-sync --no-build python scripts/intel_wheel.py seal "$RUNNER_TEMP/intel-wheel"
+      - name: Verify the native library against the current build inputs
+        run: |
           uv run --frozen --no-sync --no-build python scripts/intel_wheel.py prepare "$RUNNER_TEMP/intel-wheel"
       - name: Install only the checksummed wheel
         run: uv pip install --python .venv/bin/python --no-deps --no-build --require-hashes --requirement "$RUNNER_TEMP/intel-wheel/install.txt"

@@ -82,17 +82,32 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     steps = builder["steps"]
     commands = "\n".join(step.get("run", "") for step in steps)
     assert "--only-group intel-build" in commands
-    assert "uv build" in commands and "--no-build-isolation" in commands
+    recipe = (ROOT / "scripts/build_intel_dependencies.sh").read_text()
+    assert "uv build" in recipe and "--no-build-isolation" in recipe
     assert "scripts/intel_wheel.py fetch" in commands
     assert "scripts/intel_wheel.py fetch-openssl" in commands
-    assert "./Configure darwin64-x86_64-cc no-shared no-module" in commands
-    assert "HARNESS_JOBS=3 make test" in commands
+    assert "./Configure darwin64-x86_64-cc no-shared no-module" in recipe
+    assert "HARNESS_JOBS=3 make test" in recipe
     assert "brew" not in commands
     assert "scripts/intel_wheel.py seal" in commands
     assert "scripts/test_crypto.py" in commands
     assert "scripts/intel_wheel.py sbom" in commands
     assert "--fail-on high" in commands
     assert "grype-report.json" in commands
+    builds = [
+        step
+        for step in steps
+        if step.get("run") == "bash scripts/build_intel_dependencies.sh"
+    ]
+    assert len(builds) == 1
+    assert builds[0]["if"] == "steps.restore.outputs.reused != 'true'"
+    for step in steps:
+        if (
+            "trivy-action@" in step.get("uses", "")
+            or "scripts/test_crypto.py" in step.get("run", "")
+            or "--fail-on high" in step.get("run", "")
+        ):
+            assert "if" not in step
     scans = [step["with"] for step in steps if "trivy-action@" in step.get("uses", "")]
     assert {scan["scan-type"] for scan in scans} == {"fs", "sbom"}
     for scan in scans:
@@ -128,6 +143,34 @@ def test_scanner_downloads_enforce_https_across_redirects():
                     assert "--proto '=https'" in command
                     assert "--proto-redir '=https'" in command
                     assert "--insecure" not in command
+
+
+def test_durable_library_publication_is_main_only_and_requires_all_acceptance():
+    jobs = workflow("validate.yml")["jobs"]
+    publisher = jobs["native-release"]
+    assert "github.ref == 'refs/heads/main'" in publisher["if"]
+    assert "github.event_name != 'pull_request'" in publisher["if"]
+    assert set(publisher["needs"]) == {
+        "test",
+        "image",
+        "quality",
+        "security",
+        "intel-wheel",
+    }
+    assert publisher["permissions"]["contents"] == "write"
+    assert publisher["permissions"]["attestations"] == "write"
+    assert set(jobs["package"]["needs"]) == {"publish", "native-release"}
+    builder = workflow("intel-wheel.yml")
+    assert builder["permissions"]["contents"] == "read"
+    assert builder["permissions"]["attestations"] == "read"
+    assert builder["permissions"]["actions"] == "read"
+    steps = publisher["steps"]
+    commands = "\n".join(s.get("run", "") for s in steps)
+    assert "restore-release" in commands
+    assert "gh release create" in commands
+    assert "--clobber" not in commands
+    assert '--target "$GITHUB_SHA"' in commands
+    assert any("attest-build-provenance@" in s.get("uses", "") for s in steps)
 
 
 def report_summary(path, *, root=None, remove_root=False):

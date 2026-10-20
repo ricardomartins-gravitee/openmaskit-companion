@@ -27,6 +27,7 @@ jobs:
             "$archive" | sha256sum --check --status
           tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint"
+          shellcheck scripts/build_intel_dependencies.sh
 
   python:
     name: Python quality and coverage
