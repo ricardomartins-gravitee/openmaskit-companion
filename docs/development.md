@@ -36,3 +36,10 @@ activation policy, preference persistence, adapter effects and absence of redund
 state publications. Hosted XCTest runs both the reducer and desktop-adapter suites.
 Closing must not trigger a reopen through SwiftUI's `onAppear`; only explicit
 menu/Dock/settings intent can request the main window.
+
+`scripts/manager_acceptance.py --image <published-immutable-image>` runs actual
+CLI setup, container start, pairing, local approval, connector launch, idempotent
+registration, status redaction, a synthetic MCP call and stop. It requires the
+product ports to be free, creates its own random project and deletes only that
+disposable installation. The Linux distribution job runs it before publishing
+download artifacts. It must never adopt the user's existing installation.

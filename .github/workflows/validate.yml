@@ -126,6 +126,11 @@ jobs:
         with:
           version: '0.13.1'
       - run: uv sync --frozen --python 3.12 --group dev --group bundle
+      - name: Exercise actual managed installation lifecycle
+        if: runner.os == 'Linux'
+        env:
+          RELAY_IMAGE: ${{ needs.publish.outputs.image }}
+        run: uv run --frozen python scripts/manager_acceptance.py --image "$RELAY_IMAGE"
       - name: Build development download
         env:
           RELAY_IMAGE: ${{ needs.publish.outputs.image }}

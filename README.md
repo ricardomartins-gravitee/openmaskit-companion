@@ -39,7 +39,9 @@ uv run --frozen openmaskit-companion status
 ```
 
 State defaults to `~/.openmaskit-companion/`; use `--home /absolute/path` before
-the command for an isolated installation. State directories are mode 0700 and
+the command for an isolated installation. Each new installation gets its own
+Docker project and data volume; the fixed service ports must still be available.
+State directories are mode 0700 and
 files containing credentials are mode 0600 on POSIX. Do not publish this directory.
 Windows requires a private user-profile directory and appropriate account ACLs.
 

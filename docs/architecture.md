@@ -59,8 +59,11 @@ checks or connect AI clients directly to the raw MCP.
 
 ## Local manager
 
-The manager controls a dedicated `openmaskit-companion` Compose project in its own
-private state directory. It never adopts, stops or removes other Docker projects.
+The manager controls a dedicated `openmaskit-companion-<installation-id>` Compose
+project in its own private state directory. Each new installation gets an
+independent project/volume. The exact legacy early-alpha project name remains
+supported for existing markers. Project names are validated before Docker runs.
+The manager never adopts, stops or removes other Docker projects.
 OpenMaskit has a separate persistent volume and key; Presidio and relay share an
 internal network with OpenMaskit. Presidio joins only that network. The relay also
 joins a dedicated host-facing network for the published loopback connection;

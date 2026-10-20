@@ -69,14 +69,18 @@ def initialize(home: Path, image: str):
            "LOCAL_GID": str(os.getgid() if hasattr(os, "getgid") else 10001)}
     (stack / ".env").write_text("".join(f"{key}={value}\n" for key, value in env.items()))
     (stack / ".env").chmod(0o600)
-    write_json(stack / "managed.json", {"project": PROJECT, "schema": 1, "automatic_updates": False, "release": release})
+    project = PROJECT + "-" + secrets.token_hex(6)
+    write_json(stack / "managed.json", {"project": project, "schema": 1, "automatic_updates": False, "release": release})
     return {"dashboard": WEB, "initialized": True}
 
 
 def compose(home: Path, *arguments, timeout=360):
     stack = home / "stack"
     marker = read_json(stack / "managed.json")
-    if marker.get("project") != PROJECT or marker.get("schema") != 1:
+    project = marker.get("project")
+    if (marker.get("schema") != 1
+            or not isinstance(project, str)
+            or (project != PROJECT and re.fullmatch(re.escape(PROJECT) + r"-[0-9a-f]{12}", project) is None)):
         raise ValueError("Set up a companion-managed installation first")
     if stack.is_symlink() or (stack / "compose.yaml").is_symlink() or (stack / ".env").is_symlink():
         raise ValueError("Managed paths must not be symbolic links")
@@ -87,7 +91,7 @@ def compose(home: Path, *arguments, timeout=360):
     environment["COMPOSE_IGNORE_ORPHANS"] = "true"
     environment["PATH"] = str(Path(binary).parent) + os.pathsep + environment.get("PATH", "")
     local_docker(binary, environment)
-    result = subprocess.run([binary, "compose", "--project-name", PROJECT,
+    result = subprocess.run([binary, "compose", "--project-name", project,
         "--project-directory", str(stack), "--file", str(stack / "compose.yaml"),
         "--env-file", str(stack / ".env"), *arguments],
         capture_output=True, text=True, timeout=timeout,

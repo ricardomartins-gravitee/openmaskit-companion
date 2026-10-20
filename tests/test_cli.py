@@ -94,7 +94,9 @@ def test_setup_accepts_only_digest_and_returns_safe_json(tmp_path, capsys):
     output = capsys.readouterr().out
     assert json.loads(output) == {"dashboard": manager.WEB, "initialized": True}
     assert digest not in output
-    assert read_json(tmp_path / "stack/managed.json")["project"] == manager.PROJECT
+    project = read_json(tmp_path / "stack/managed.json")["project"]
+    assert project.startswith(manager.PROJECT + "-")
+    assert len(project) == len(manager.PROJECT) + 13
 
 
 def test_setup_rejects_unpinned_image_with_safe_error(tmp_path, capsys):
