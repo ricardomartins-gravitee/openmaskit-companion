@@ -1,0 +1,51 @@
+name: openmaskit-companion
+services:
+  openmaskit:
+    image: ${OPENMASKIT_IMAGE:?Select a verified OpenMaskit image}
+    init: true
+    restart: "no"
+    stop_grace_period: 45s
+    environment:
+      OPENMASKIT_HOST: 0.0.0.0
+      OPENMASKIT_WEB_PORT: "9493"
+      OPENMASKIT_MCP_PORT: "9494"
+      OPENMASKIT_DISABLE_MARKETPLACE: "1"
+      OPENMASKIT_ANALYZER_ALLOWED_ORIGINS: http://presidio-analyzer:3000
+    command: ["--web-port", "9493", "--mcp-port", "9494"]
+    ports: ["127.0.0.1:9493:9493", "127.0.0.1:9494:9494"]
+    volumes: ["openmaskit-data:/home/openmaskit/.openmaskit"]
+    depends_on:
+      presidio-analyzer: {condition: service_healthy}
+      connector-relay: {condition: service_healthy}
+    networks: [default, private]
+  presidio-analyzer:
+    image: ghcr.io/data-privacy-stack/presidio-analyzer:2.2.364
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health',timeout=5).close()"]
+      interval: 10s
+      timeout: 6s
+      start_period: 60s
+      retries: 12
+    networks: [private]
+  connector-relay:
+    image: ${COMPANION_IMAGE:?Select a verified companion image}
+    user: "${LOCAL_UID:-10001}:${LOCAL_GID:-10001}"
+    init: true
+    restart: "no"
+    command: ["relay", "--state", "/state/relay.json", "--host", "0.0.0.0", "--port", "9495"]
+    ports: ["127.0.0.1:9495:9495"]
+    volumes: ["./relay:/state"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9495/health',timeout=5).close()"]
+      interval: 5s
+      timeout: 6s
+      retries: 12
+    networks: [private, connector-link]
+volumes:
+  openmaskit-data:
+networks:
+  default:
+  private:
+    internal: true
+  connector-link:
