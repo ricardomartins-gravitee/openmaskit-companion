@@ -43,7 +43,8 @@ jobs:
       - name: Explicitly compile the verified source with locked build tools
         run: |
           set -euo pipefail
-          export OPENSSL_DIR="$(brew --prefix openssl@3)"
+          OPENSSL_DIR="$(brew --prefix openssl@3)"
+          export OPENSSL_DIR
           uv build "$RUNNER_TEMP/crypto-build/source.tar.gz" --wheel --no-build-isolation \
             --python .venv/bin/python --out-dir "$RUNNER_TEMP/intel-wheel"
           {
