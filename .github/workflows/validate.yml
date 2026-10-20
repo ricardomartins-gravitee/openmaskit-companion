@@ -27,7 +27,7 @@ jobs:
       - run: uv sync --frozen --python 3.12 --group dev
       - run: uv run --frozen pytest -q
       - if: runner.os == 'macOS'
-        run: swift build --package-path desktop/macos
+        run: swift test --package-path desktop/macos
 
   image:
     needs: test

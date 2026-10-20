@@ -41,6 +41,17 @@ struct LocalProfile: Codable, Identifiable {
     @Published var message = ""
     @Published var connectorRunning = false
     private var connector: Process?
+    private var monitor: Task<Void, Never>?
+
+    func startMonitoring() {
+        guard monitor == nil else { return }
+        monitor = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refresh()
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
 
     var backend: URL {
         if let development = ProcessInfo.processInfo.environment["COMPANION_BACKEND"] {
@@ -178,6 +189,8 @@ struct LocalProfile: Codable, Identifiable {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: CompanionModel?
+    var preferences: AppPreferences?
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { model?.stopConnector() }
     }
@@ -186,9 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main struct CompanionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject var model = CompanionModel()
+    @StateObject var preferences = AppPreferences()
 
     var body: some Scene {
-        WindowGroup("OpenMaskit Companion") {
+        Window("OpenMaskit Companion", id: "main") {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     Image(systemName: "desktopcomputer.and.arrow.down")
@@ -263,6 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Text("Updates are manual in this development build.").foregroundStyle(.secondary)
                     Spacer()
                     Button("Refresh") { Task { await model.refresh() } }
+                    SettingsLink { Text("Settings…") }
                 }.font(.callout)
                 if model.busy { ProgressView("Working…").controlSize(.small) }
                 if let error = model.installation.error { Text(error).foregroundStyle(.orange) }
@@ -270,15 +285,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .padding(28).frame(minWidth: 680, minHeight: 520)
             .disabled(model.busy)
-            .task {
+            .background(MainWindowObserver(preferences: preferences))
+            .onAppear {
+                if preferences.mainWindowClosed { preferences.revealMainWindow() }
                 delegate.model = model
-                await model.refresh()
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(5))
-                    await model.refresh()
-                }
+                delegate.preferences = preferences
+                model.startMonitoring()
             }
         }
         .windowResizability(.contentSize)
+        Settings { SettingsScreen(preferences: preferences) }
+        MenuBarExtra("OpenMaskit Companion", systemImage: "shield.lefthalf.filled", isInserted: Binding(
+            get: { preferences.menuBarVisible },
+            set: { inserted in
+                preferences.showInMenuBar = inserted
+                if !inserted && preferences.mainWindowClosed { preferences.revealMainWindow() }
+            })) {
+            CompanionMenu(model: model, preferences: preferences)
+        }.menuBarExtraStyle(.menu)
     }
 }

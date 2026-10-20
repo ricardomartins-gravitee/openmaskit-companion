@@ -8,6 +8,13 @@ project, not a renamed OpenMaskit distribution, and is not endorsed by upstream.
 The macOS application is a development build until signed and notarized.
 Automatic installation, login startup and automatic updates are not enabled.
 
+The macOS app's **Settings** screen includes independent options to show a menu
+bar icon and to keep running in the menu bar when the main window closes. Closing
+to the menu bar hides the Dock icon; the menu can reopen the window or quit. Both
+options are off initially and saved when changed. Monitoring continues while the
+window is hidden. Quitting stops the local connector; managed containers retain
+their normal running state until explicitly stopped.
+
 ## Components
 
 - **Native macOS app:** setup, status, start/stop, pairing and connector supervision.
