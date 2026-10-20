@@ -30,3 +30,9 @@ eight menu visibility combinations without XCTest. Also verify native behavior:
 Settings preferences persist, each menu option works independently, closing to
 the menu bar removes the Dock icon, Show restores the window and Dock icon,
 Settings remains reachable while hidden, and Quit terminates the connector.
+
+`python scripts/test_macos_desktop.py` additionally checks the actual AppKit
+activation policy, preference persistence, adapter effects and absence of redundant
+state publications. Hosted XCTest runs both the reducer and desktop-adapter suites.
+Closing must not trigger a reopen through SwiftUI's `onAppear`; only explicit
+menu/Dock/settings intent can request the main window.

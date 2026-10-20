@@ -7,7 +7,9 @@ let package = Package(
     products: [.executable(name: "OpenMaskitCompanion", targets: ["OpenMaskitCompanion"])],
     targets: [
         .target(name: "CompanionPolicy"),
-        .executableTarget(name: "OpenMaskitCompanion", dependencies: ["CompanionPolicy"]),
-        .testTarget(name: "CompanionPolicyTests", dependencies: ["CompanionPolicy"])
+        .target(name: "CompanionDesktopCore", dependencies: ["CompanionPolicy"]),
+        .executableTarget(name: "OpenMaskitCompanion", dependencies: ["CompanionPolicy", "CompanionDesktopCore"]),
+        .testTarget(name: "CompanionPolicyTests", dependencies: ["CompanionPolicy"]),
+        .testTarget(name: "CompanionDesktopCoreTests", dependencies: ["CompanionDesktopCore"])
     ]
 )

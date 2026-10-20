@@ -1,4 +1,5 @@
 import AppKit
+import CompanionDesktopCore
 import SwiftUI
 
 struct Service: Codable, Identifiable {
@@ -191,6 +192,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var model: CompanionModel?
     var preferences: AppPreferences?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag || preferences?.mainWindowClosed == true {
+            preferences?.revealMainWindow()
+        }
+        return false
+    }
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { model?.stopConnector() }
     }
@@ -287,7 +294,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .disabled(model.busy)
             .background(MainWindowObserver(preferences: preferences))
             .onAppear {
-                if preferences.mainWindowClosed { preferences.revealMainWindow() }
                 delegate.model = model
                 delegate.preferences = preferences
                 model.startMonitoring()
@@ -297,10 +303,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Settings { SettingsScreen(preferences: preferences) }
         MenuBarExtra("OpenMaskit Companion", systemImage: "shield.lefthalf.filled", isInserted: Binding(
             get: { preferences.menuBarVisible },
-            set: { inserted in
-                preferences.showInMenuBar = inserted
-                if !inserted && preferences.mainWindowClosed { preferences.revealMainWindow() }
-            })) {
+            // SwiftUI echoes insertion state while synchronizing scenes. Only
+            // Settings changes the preferences; publishing the echo loops and
+            // would turn close-only visibility into a permanent menu-bar option.
+            set: { preferences.synchronizeMenuBarInsertion($0) })) {
             CompanionMenu(model: model, preferences: preferences)
         }.menuBarExtraStyle(.menu)
     }

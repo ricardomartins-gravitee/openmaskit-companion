@@ -111,7 +111,8 @@ def status(home: Path):
         result["error"] = "Docker is unavailable"
     if result["initialized"]:
         try:
-            result["connectors"] = admin(home, "GET", "/admin/connectors")["connectors"]
+            result["connectors"] = [{key: row[key] for key in ("id", "name", "connected", "profiles") if key in row}
+                for row in admin(home, "GET", "/admin/connectors")["connectors"]]
         except (ValueError, httpx.HTTPError):
             result["connectors"] = []
     return result

@@ -79,3 +79,21 @@ def test_unmanaged_directory_cannot_run_docker(tmp_path):
 def test_remote_docker_not_managed(endpoint):
     with pytest.raises(ValueError):
         manager.local_docker("docker", {"DOCKER_HOST": endpoint})
+
+
+def test_explicit_local_docker_context_takes_precedence_over_docker_host():
+    environment = {"DOCKER_CONTEXT": "synthetic-local", "DOCKER_HOST": "tcp://remote.example:2376"}
+    with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(
+            [], 0, '"unix:///synthetic/local-docker.sock"', "")) as run:
+        manager.local_docker("/usr/local/bin/docker", environment)
+    assert run.call_args.args[0] == ["/usr/local/bin/docker", "context", "inspect",
+                                     "synthetic-local", "--format", "{{json .Endpoints.docker.Host}}"]
+    assert run.call_args.kwargs["env"] is environment
+
+
+def test_explicit_remote_docker_context_is_rejected_even_if_docker_host_is_local():
+    environment = {"DOCKER_CONTEXT": "synthetic-remote", "DOCKER_HOST": "unix:///synthetic/local.sock"}
+    with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess(
+            [], 0, '"ssh://docker.example"', "")):
+        with pytest.raises(ValueError, match="local Docker socket"):
+            manager.local_docker("/usr/local/bin/docker", environment)

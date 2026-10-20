@@ -90,6 +90,45 @@ def test_no_launch_commands_in_handshake(relay):
                 ws.receive_json()
 
 
+@pytest.mark.parametrize("hello", [
+    {"type": "hello", "protocol": 2, "profiles": []},
+    {"type": "hello", "protocol": 1, "profiles": [{"id": "fixture", "name": "One"},
+                                                        {"id": "fixture", "name": "Two"}]},
+])
+def test_handshake_rejects_protocol_mismatch_and_duplicate_profiles(relay, hello):
+    app, settings = relay
+    with TestClient(app) as client:
+        config, _ = paired(client, settings)
+        headers = {"Authorization": "Bearer " + config["token"]}
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/connect/" + config["id"], headers=headers) as ws:
+                ws.send_json(hello)
+                ws.receive_json()
+
+
+def test_websocket_origin_is_rejected_with_valid_connector_token(relay):
+    app, settings = relay
+    with TestClient(app) as client:
+        config, _ = paired(client, settings)
+        headers = {"Authorization": "Bearer " + config["token"], "Origin": "https://evil.test"}
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/connect/" + config["id"], headers=headers):
+                pass
+
+
+def test_oversized_websocket_frame_is_closed(relay):
+    app, settings = relay
+    with TestClient(app) as client:
+        config, _ = paired(client, settings)
+        headers = {"Authorization": "Bearer " + config["token"]}
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect("/connect/" + config["id"], headers=headers) as ws:
+                ws.send_json({"type": "hello", "protocol": 1, "profiles": []})
+                assert ws.receive_json() == {"type": "ready", "protocol": 1}
+                ws.send_text("x" * 1_048_577)
+                ws.receive_json()
+
+
 def test_duplicate_connection_is_denied_during_handshake(relay):
     app, settings = relay
     with TestClient(app) as client:

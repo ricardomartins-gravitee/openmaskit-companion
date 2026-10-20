@@ -1,41 +1,7 @@
 import AppKit
 import CompanionPolicy
+import CompanionDesktopCore
 import SwiftUI
-
-@MainActor final class AppPreferences: ObservableObject {
-    @Published var showInMenuBar: Bool {
-        didSet { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
-    }
-    @Published var closeToMenuBar: Bool {
-        didSet { defaults.set(closeToMenuBar, forKey: "closeToMenuBar") }
-    }
-    @Published private(set) var mainWindowClosed = false
-    private let defaults: UserDefaults
-    weak var mainWindow: NSWindow?
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        showInMenuBar = defaults.bool(forKey: "showInMenuBar")
-        closeToMenuBar = defaults.bool(forKey: "closeToMenuBar")
-    }
-
-    var menuBarVisible: Bool {
-        MenuBarPolicy.isVisible(alwaysShow: showInMenuBar, closeToMenuBar: closeToMenuBar,
-                                mainWindowClosed: mainWindowClosed)
-    }
-
-    func windowClosed() {
-        mainWindowClosed = true
-        if closeToMenuBar { NSApp.setActivationPolicy(.accessory) }
-    }
-
-    func revealMainWindow() {
-        NSApp.setActivationPolicy(.regular)
-        mainWindowClosed = false
-        mainWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
 
 struct SettingsScreen: View {
     @ObservedObject var preferences: AppPreferences
@@ -55,11 +21,8 @@ struct SettingsScreen: View {
             }
         }
         .formStyle(.grouped).padding(10).frame(width: 540, height: 310)
-        .onChange(of: preferences.closeToMenuBar) { _, enabled in
-            if !enabled && preferences.mainWindowClosed {
-                preferences.revealMainWindow()
-                openWindow(id: "main")
-            }
+        .onAppear {
+            preferences.openMainWindow = { openWindow(id: "main") }
         }
     }
 }
@@ -72,7 +35,6 @@ struct CompanionMenu: View {
     var body: some View {
         Button("Show OpenMaskit Companion") {
             preferences.revealMainWindow()
-            openWindow(id: "main")
         }
         Button("Open OpenMaskit Dashboard") {
             NSWorkspace.shared.open(URL(string: "http://127.0.0.1:9493")!)
@@ -86,16 +48,22 @@ struct CompanionMenu: View {
         Divider()
         SettingsLink { Text("Settings…") }.keyboardShortcut(",")
         Button("Quit OpenMaskit Companion") { NSApp.terminate(nil) }.keyboardShortcut("q")
+        .onAppear { preferences.openMainWindow = { openWindow(id: "main") } }
     }
 }
 
 struct MainWindowObserver: NSViewRepresentable {
     let preferences: AppPreferences
+    @Environment(\.openWindow) private var openWindow
 
     func makeCoordinator() -> Coordinator { Coordinator(preferences) }
     func makeNSView(context: Context) -> NSView { NSView() }
     func updateNSView(_ view: NSView, context: Context) {
-        DispatchQueue.main.async { context.coordinator.observe(view.window) }
+        let action = openWindow
+        DispatchQueue.main.async {
+            preferences.openMainWindow = { action(id: "main") }
+            context.coordinator.observe(view.window)
+        }
     }
 
     @MainActor final class Coordinator {
@@ -108,7 +76,6 @@ struct MainWindowObserver: NSViewRepresentable {
             guard let window, self.window !== window else { return }
             if let token { NotificationCenter.default.removeObserver(token) }
             self.window = window
-            preferences.mainWindow = window
             token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                 object: window, queue: .main) { [weak preferences] _ in
                     MainActor.assumeIsolated { preferences?.windowClosed() }
