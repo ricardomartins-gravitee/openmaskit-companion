@@ -3,6 +3,7 @@ import io
 import json
 import shutil
 import subprocess
+import sys
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -218,7 +219,11 @@ def mock_bootstrap(tmp_path, monkeypatch):
     def download(args, **kwargs):
         assert args[:4] == ["gh", "run", "download", "456"]
         assert args[args.index("--repo") + 1] == wheel.REPOSITORY
-        shutil.copytree(original, Path(args[args.index("--dir") + 1]))
+        destination = next(
+            a.removeprefix("--dir=") for a in args if a.startswith("--dir=")
+        )
+        assert Path(destination).is_absolute()
+        shutil.copytree(original, Path(destination))
 
     monkeypatch.setattr(wheel.subprocess, "run", download)
     return pin, producer
@@ -283,3 +288,28 @@ def test_archive_rejects_symlink_even_with_allowed_name(tmp_path):
             result.writestr(info, original.read(name))
     with pytest.raises(ValueError, match="unsafe path"):
         wheel.unpack_bundle(bad, tmp_path / "restored")
+
+
+def test_cli_rejects_destinations_outside_fixed_ci_contract(tmp_path, monkeypatch):
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setattr(
+        sys, "argv", ["intel_wheel.py", "restore", str(tmp_path / "other")]
+    )
+    with pytest.raises(ValueError, match="fixed CI destination"):
+        wheel.main()
+
+
+def test_cli_passes_canonical_fixed_destination_to_restore(tmp_path, monkeypatch):
+    output = tmp_path / "output.txt"
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr(
+        sys, "argv", ["intel_wheel.py", "restore", str(tmp_path / "intel-wheel")]
+    )
+    calls = []
+    monkeypatch.setattr(
+        wheel, "restore", lambda path, **kwargs: calls.append(path) or False
+    )
+    wheel.main()
+    assert calls == [tmp_path.resolve() / "intel-wheel"]
+    assert "reused=false" in output.read_text()

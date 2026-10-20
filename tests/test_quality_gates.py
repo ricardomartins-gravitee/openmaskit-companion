@@ -147,6 +147,12 @@ def test_scanner_downloads_enforce_https_across_redirects():
 
 def test_durable_library_publication_is_main_only_and_requires_all_acceptance():
     jobs = workflow("validate.yml")["jobs"]
+    assert workflow("validate.yml")["permissions"] == {"contents": "read"}
+    assert jobs["intel-wheel"]["permissions"] == {
+        "contents": "read",
+        "actions": "read",
+        "attestations": "read",
+    }
     publisher = jobs["native-release"]
     assert "github.ref == 'refs/heads/main'" in publisher["if"]
     assert "github.event_name != 'pull_request'" in publisher["if"]

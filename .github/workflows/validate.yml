@@ -7,8 +7,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  attestations: read
-  actions: read
 concurrency:
   group: companion-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -22,6 +20,10 @@ jobs:
 
   intel-wheel:
     needs: [quality, security]
+    permissions:
+      contents: read
+      attestations: read
+      actions: read
     uses: ./.github/workflows/intel-wheel.yml
 
   test:

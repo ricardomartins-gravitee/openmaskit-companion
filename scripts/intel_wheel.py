@@ -263,6 +263,7 @@ def github_json(path):
 
 def restore_bootstrap(directory):
     """One reviewed existing build seeds the durable release without recompiling."""
+    directory = directory.resolve()
     path = ROOT / "dependencies/intel-bootstrap.json"
     if not path.exists():
         return False
@@ -297,8 +298,7 @@ def restore_bootstrap(directory):
             REPOSITORY,
             "--name",
             "intel-cryptography-wheel",
-            "--dir",
-            str(directory),
+            "--dir=" + str(directory),
         ],
         check=True,
         timeout=180,
@@ -317,6 +317,7 @@ def restore_bootstrap(directory):
 
 def restore(directory, *, bootstrap_allowed=True):
     """Only a missing library permits compilation; verification errors fail closed."""
+    directory = directory.resolve()
     tag = "native-intel-" + build_key()
     try:
         release = github_json(f"releases/tags/{tag}")
@@ -423,10 +424,20 @@ def main():
         return
     if args.directory is None:
         parser.error("directory is required")
+    # These are CI operations, with destinations fixed by the workflow contract.
+    root = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
+    name = {
+        "fetch": "crypto-build",
+        "fetch-openssl": "openssl-build",
+        "restore-release": "existing-native-library",
+    }.get(args.operation, "intel-wheel")
+    directory = root / name
+    if args.directory.resolve() != directory or directory.is_symlink():
+        raise ValueError("Only the fixed CI destination is accepted")
     if args.operation == "seal":
-        seal(args.directory, os.environ.get("GITHUB_SHA", ""))
+        seal(directory, os.environ.get("GITHUB_SHA", ""))
     elif args.operation in ("restore", "restore-release"):
-        result = restore(args.directory, bootstrap_allowed=args.operation == "restore")
+        result = restore(directory, bootstrap_allowed=args.operation == "restore")
         value = "true" if result else "false"
         print(f"Reused stored native library: {value}")
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
@@ -438,7 +449,7 @@ def main():
             "sbom": sbom,
             "prepare": prepare,
             "archive": archive_bundle,
-        }[args.operation](args.directory)
+        }[args.operation](directory)
 
 
 if __name__ == "__main__":
