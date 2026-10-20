@@ -24,13 +24,13 @@ jobs:
         run: uv sync --frozen --no-build --python 3.12 --only-group intel-build
       - name: Download and verify locked upstream source
         run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py fetch "$RUNNER_TEMP/crypto-build"
-      - name: Scan locked Rust dependencies and upstream source
+      - name: Scan locked upstream dependencies
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: fs
           scan-ref: ${{ runner.temp }}/crypto-build/source
           version: v0.70.0
-          scanners: vuln,secret
+          scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: 'false'
           exit-code: '1'

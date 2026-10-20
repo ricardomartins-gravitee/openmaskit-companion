@@ -18,8 +18,11 @@ downloads an executable artifact from another workflow or a previous PR run.
    Refuse redirects; verify its size and SHA-256 before extracting or building.
    Extraction uses Python's safe data filter. Require the upstream Cargo lockfile
    and Maturin's `locked = true` setting, preventing Rust dependency re-resolution.
-3. Scan the extracted upstream source and Cargo dependencies with Trivy.
-   HIGH/CRITICAL vulnerabilities and detected secrets block the job.
+3. Scan the extracted upstream dependency lockfiles with Trivy.
+   HIGH/CRITICAL vulnerabilities block the job. This additional dependency check
+   does not apply credential rules to upstream documentation examples containing
+   published test private keys. Our repository/history and final image have
+   their own blocking secret scans.
 4. Explicitly build that verified source with `uv build --no-build-isolation`,
    using the already installed Python build tools. This is the only third-party
    compilation step. macOS deployment target is 14.0 and OpenSSL is statically

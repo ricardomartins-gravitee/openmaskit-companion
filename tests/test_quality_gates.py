@@ -92,6 +92,7 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     scans = [step["with"] for step in steps if "trivy-action@" in step.get("uses", "")]
     assert {scan["scan-type"] for scan in scans} == {"fs", "sbom"}
     for scan in scans:
+        assert scan["scanners"] == "vuln"
         assert scan["exit-code"] == "1"
         assert scan["ignore-unfixed"] == "false"
         assert scan["severity"] == "HIGH,CRITICAL"
