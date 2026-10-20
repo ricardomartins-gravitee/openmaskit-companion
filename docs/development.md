@@ -28,6 +28,9 @@ The first native app targets macOS 14+, using SwiftUI and a bundled standalone
 Python backend. It has no shell command interpolation, no local control HTTP
 server and no automatic login/startup behavior. The backend can run independently
 through its CLI. Linux/Windows CLI builds use the same Python implementation.
+Apple Silicon and Intel macOS have separate native test and packaging jobs.
+Intel reuses our [verified cryptography wheel](intel-wheel.md) from the same
+workflow run; packaged downloads do not compile dependencies on a user's Mac.
 
 Full Xcode supplies XCTest for the hosted macOS policy tests. If a local Mac has
 only Command Line Tools, run `python scripts/test_macos_policy.py` to check all

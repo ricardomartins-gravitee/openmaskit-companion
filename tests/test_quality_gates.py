@@ -21,7 +21,13 @@ def workflow(name):
 def test_security_and_quality_are_required_before_publishing():
     jobs = workflow("validate.yml")["jobs"]
     assert set(jobs["image"]["needs"]) == {"quality", "security"}
-    assert set(jobs["publish"]["needs"]) == {"test", "image", "quality", "security"}
+    assert set(jobs["publish"]["needs"]) == {
+        "test",
+        "image",
+        "quality",
+        "security",
+        "intel-wheel",
+    }
     for name in ("quality", "security"):
         assert jobs[name]["uses"] == f"./.github/workflows/{name}.yml"
         assert "workflow_call" in workflow(f"{name}.yml")["on"]
@@ -48,25 +54,65 @@ def test_coverage_gate_includes_all_production_code_and_branches():
 
 
 def test_ci_disallows_dependency_source_builds_and_implicit_resynchronization():
-    for name in ("validate.yml", "quality.yml"):
+    for name in ("validate.yml", "quality.yml", "intel-wheel.yml"):
         for job in workflow(name)["jobs"].values():
             for step in job.get("steps", []):
                 for command in re.findall(
                     r"\buv (?:sync|run)\b[^\n]*", step.get("run", "")
                 ):
                     assert "--frozen" in command
-                    if "--no-build" not in command:
-                        assert name == "validate.yml"
-                        assert step.get("if") == "matrix.os == 'macos-15-intel'"
-                        assert command.startswith("uv sync")
+                    assert "--no-build" in command
                     if command.startswith("uv run"):
                         assert "--no-sync" in command
                         assert "--no-build" in command
     assert "uv sync --frozen --no-build" in (ROOT / "Dockerfile").read_text()
 
 
+def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run():
+    jobs = workflow("validate.yml")["jobs"]
+    assert set(jobs["intel-wheel"]["needs"]) == {"quality", "security"}
+    assert jobs["intel-wheel"]["uses"] == "./.github/workflows/intel-wheel.yml"
+    assert jobs["test"]["needs"] == "intel-wheel"
+    builder = workflow("intel-wheel.yml")["jobs"]["wheel"]
+    assert builder["runs-on"] == "macos-15-intel"
+    assert builder["env"]["OPENSSL_STATIC"] == "1"
+    steps = builder["steps"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert "--only-group intel-build" in commands
+    assert "uv build" in commands and "--no-build-isolation" in commands
+    assert "scripts/intel_wheel.py fetch" in commands
+    assert "scripts/intel_wheel.py seal" in commands
+    assert "scripts/test_crypto.py" in commands
+    assert "scripts/intel_wheel.py sbom" in commands
+    assert "--fail-on high" in commands
+    assert "grype-report.json" in commands
+    scans = [step["with"] for step in steps if "trivy-action@" in step.get("uses", "")]
+    assert {scan["scan-type"] for scan in scans} == {"fs", "sbom"}
+    for scan in scans:
+        assert scan["exit-code"] == "1"
+        assert scan["ignore-unfixed"] == "false"
+        assert scan["severity"] == "HIGH,CRITICAL"
+    for name in ("test", "package"):
+        steps = jobs[name]["steps"]
+        downloads = [s for s in steps if "download-artifact@" in s.get("uses", "")]
+        assert len(downloads) == 1
+        assert downloads[0]["if"] == "matrix.os == 'macos-15-intel'"
+        assert downloads[0]["with"]["name"] == "intel-cryptography-wheel"
+        assert "run-id" not in downloads[0]["with"]
+        commands = "\n".join(step.get("run", "") for step in steps)
+        assert "--no-install-package cryptography" in commands
+        assert "scripts/intel_wheel.py prepare" in commands
+        assert "scripts/test_crypto.py" in commands
+    for job in [builder, jobs["test"], jobs["package"]]:
+        for step in job["steps"]:
+            for command in re.findall(r"\buv pip install\b[^\n]*", step.get("run", "")):
+                assert "--no-build" in command
+                assert "--no-deps" in command
+                assert "--require-hashes" in command
+
+
 def test_scanner_downloads_enforce_https_across_redirects():
-    for name in ("quality.yml", "security.yml"):
+    for name in ("quality.yml", "security.yml", "intel-wheel.yml"):
         for job in workflow(name)["jobs"].values():
             for step in job.get("steps", []):
                 command = step.get("run", "")
@@ -137,6 +183,39 @@ def test_security_summary_missing_report_is_not_success(tmp_path):
     result = report_summary(tmp_path / "trivy-image.json")
     assert result.returncode == 1
     assert result.stderr == ""
+
+
+def test_grype_summary_withholds_component_details(tmp_path):
+    private = "synthetic-private-component-details"
+    path = tmp_path / "grype-report.json"
+    path.write_text(
+        json.dumps(
+            {
+                "matches": [
+                    {
+                        "vulnerability": {
+                            "id": "CVE-2026-12345",
+                            "description": private,
+                        },
+                        "artifact": {"locations": [private]},
+                    },
+                    {"vulnerability": {"id": private}},
+                ]
+            }
+        )
+    )
+    result = report_summary(path)
+    assert result.returncode == 0
+    assert "2 vulnerability" in result.stdout
+    assert "CVE-2026-12345" in result.stdout
+    assert private not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("report", [{}, {"matches": None}, {"matches": [None]}])
+def test_grype_summary_fails_closed(tmp_path, report):
+    path = tmp_path / "grype-report.json"
+    path.write_text(json.dumps(report))
+    assert report_summary(path).returncode == 1
 
 
 def test_security_summary_rejects_paths_outside_runner_temp(tmp_path):

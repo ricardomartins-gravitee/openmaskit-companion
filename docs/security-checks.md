@@ -31,7 +31,7 @@ acceptance or publication. HIGH/CRITICAL vulnerabilities and secrets block the
 image; unfixed findings are included. Scan reports stay private to the ephemeral
 runner. A tested report helper prints only counts and validated advisory IDs.
 Missing or malformed reports fail rather than appearing clean.
-The report reader accepts only the two fixed Trivy JSON filenames inside
+The report reader accepts only the fixed Trivy and Grype JSON filenames inside
 `RUNNER_TEMP`, rejects symlinks and other locations, and limits input to 16 MiB.
 Release downloads require HTTPS for the initial request and every redirect,
 as well as verifying the archive checksum.
@@ -52,13 +52,20 @@ The independent reusable quality workflow locks its tools in `uv.lock` and runs:
   from `uv.lock`, retaining their hashes. Any known vulnerability fails this
   check, including severities below Trivy's HIGH/CRITICAL threshold.
 
-CI installation disallows building third-party source distributions except in
-the explicit Intel macOS installation steps: the locked cryptography release
-has no compatible binary wheel there and must compile. Those steps still use
-the frozen, hash-pinned dependency lockfile. Commands after installation use
-`uv run --no-sync --no-build` to avoid implicit dependency
-resynchronization. The first-party project itself is still built from the reviewed
-checkout, including during the container build.
+All CI dependency installation disallows source builds. Intel macOS uses a
+dedicated [cryptography wheel build](intel-wheel.md): an explicit compilation of
+the hash-verified upstream source, using locked binary Python build tools and
+the upstream Cargo lockfile. Trivy scans its Rust inputs and Python component;
+Grype 0.121.0 additionally checks the embedded OpenSSL version using its CPE.
+Native cryptographic vectors, tamper rejection and static linkage must pass
+before the wheel is shared with tests and packaging in the same workflow run.
+Consumers verify the commit, source checksum, wheel metadata and wheel checksum,
+then install that wheel with `--no-build --no-deps --require-hashes`.
+There are no SonarQube exceptions for source installation.
+
+Commands after installation use `uv run --no-sync --no-build` to avoid implicit
+dependency resynchronization. The first-party project itself is still built
+from the reviewed checkout, including during the container build.
 
 Native macOS jobs additionally enforce Apple's `swift format` lint before
 running the native tests. GitHub workflow syntax is validated in CI with

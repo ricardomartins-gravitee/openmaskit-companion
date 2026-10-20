@@ -31,6 +31,12 @@ dev = [
     "ruff>=0.17.1",
 ]
 bundle = ["pyinstaller>=6.16,<7"]
+intel-build = [
+    "cffi>=2.1.1",
+    "maturin>=1.14.1,<2",
+    "packaging>=26",
+    "setuptools>=82",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

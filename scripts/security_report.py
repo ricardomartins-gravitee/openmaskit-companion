@@ -15,6 +15,7 @@ def read_report():
     allowed = {
         "trivy-report.json": root / "trivy-report.json",
         "trivy-image.json": root / "trivy-image.json",
+        "grype-report.json": root / "grype-report.json",
     }
     requested = Path(sys.argv[1])
     report_path = allowed[requested.name]
@@ -34,7 +35,20 @@ def read_report():
 def main():
     try:
         report = read_report()
-        results = report.get("Results") or []
+        if Path(sys.argv[1]).name == "grype-report.json":
+            matches = report["matches"]
+            if not isinstance(matches, list):
+                raise ValueError("Invalid Grype matches")
+            results = [
+                {
+                    "Vulnerabilities": [
+                        {"VulnerabilityID": match["vulnerability"]["id"]}
+                        for match in matches
+                    ]
+                }
+            ]
+        else:
+            results = report.get("Results") or []
         counts = {
             key: sum(len(result.get(key) or []) for result in results)
             for key in ("Vulnerabilities", "Misconfigurations", "Secrets")
@@ -53,7 +67,7 @@ def main():
         print("Scanner report unavailable or invalid; contents withheld.")
         return 1
     print(
-        f"Trivy findings: {counts['Vulnerabilities']} vulnerability, "
+        f"Scanner findings: {counts['Vulnerabilities']} vulnerability, "
         f"{counts['Misconfigurations']} misconfiguration, {counts['Secrets']} secret."
     )
     print("Advisory IDs: " + (", ".join(safe_ids) if safe_ids else "none"))
