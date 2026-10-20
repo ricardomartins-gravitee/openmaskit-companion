@@ -39,7 +39,8 @@ The independent reusable quality workflow locks its tools in `uv.lock` and runs:
 - **Ruff** linting and formatting across production Python, tests and scripts.
 - **Bandit** security analysis of all production Python. Required fixed-argument
   Docker process calls and best-effort private-error cleanup have narrow inline
-  exceptions with rationale; there are no global rule exclusions.
+  exceptions with rationale; there are no global rule exclusions. Its raw report
+  stays on the ephemeral runner because it can contain source excerpts.
 - **pytest-cov / coverage.py**, including branches, with an enforced 80% overall
   coverage floor and downloadable HTML/XML reports. Production modules are not
   omitted to reach the threshold. The current baseline is approximately 85%.

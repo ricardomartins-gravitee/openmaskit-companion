@@ -58,7 +58,6 @@ jobs:
           path: |
             coverage.xml
             htmlcov/
-            bandit.json
             pip-audit.json
           if-no-files-found: ignore
           retention-days: 14
