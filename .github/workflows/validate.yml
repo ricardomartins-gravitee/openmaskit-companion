@@ -39,7 +39,7 @@ jobs:
         run: uv sync --frozen --no-build --python 3.12 --group dev
       - if: matrix.os == 'macos-15-intel'
         name: Install binary dependencies without cryptography
-        run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package cryptography
+        run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle --no-install-package cryptography
       - if: matrix.os == 'macos-15-intel'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -57,6 +57,12 @@ jobs:
         run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
       - if: runner.os == 'macOS'
         run: swift test --package-path desktop/macos
+      - if: matrix.os == 'macos-15-intel'
+        name: Build an Intel development app with the verified wheel before merge
+        run: uv run --frozen --no-sync --no-build python scripts/bundle.py
+      - if: matrix.os == 'macos-15-intel'
+        name: Exercise the packaged Intel connector before merge
+        run: uv run --frozen --no-sync --no-build python scripts/test_bundle.py
 
   image:
     needs: [quality, security]

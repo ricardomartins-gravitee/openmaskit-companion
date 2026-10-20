@@ -73,6 +73,9 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     assert set(jobs["intel-wheel"]["needs"]) == {"quality", "security"}
     assert jobs["intel-wheel"]["uses"] == "./.github/workflows/intel-wheel.yml"
     assert jobs["test"]["needs"] == "intel-wheel"
+    test_commands = "\n".join(s.get("run", "") for s in jobs["test"]["steps"])
+    assert "scripts/bundle.py" in test_commands
+    assert "scripts/test_bundle.py" in test_commands
     builder = workflow("intel-wheel.yml")["jobs"]["wheel"]
     assert builder["runs-on"] == "macos-15-intel"
     assert builder["env"]["OPENSSL_STATIC"] == "1"

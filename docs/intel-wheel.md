@@ -42,6 +42,8 @@ downloads an executable artifact from another workflow or a previous PR run.
    verify it against their checkout and install it with required SHA-256 hashes.
    They repeat native cryptographic checks before the normal downstream tests
    or bundle acceptance. No step falls back to compiling at installation time.
+   The pull request also builds the Intel development app and exercises the
+   packaged executable through the real bidirectional MCP integration tests.
 
 ## Maintenance and limits
 
