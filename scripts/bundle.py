@@ -18,6 +18,14 @@ def copy_app_icons(resources):
         shutil.copy2(assets / name, resources / name)
 
 
+def copy_design_notices(resources):
+    checkout = ROOT / "desktop/macos/.build/checkouts/openmaskit-design-system"
+    destination = resources / "ThirdParty/OpenMaskitDesign"
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in ("LICENSE", "NOTICE", "TRADEMARKS.md"):
+        shutil.copy2(checkout / name, destination / name)
+
+
 def write_info_plist(app):
     with (app / "Info.plist").open("wb") as out:
         plistlib.dump(
@@ -85,6 +93,7 @@ def main():
     (app / "MacOS").mkdir(parents=True, exist_ok=True)
     resources = app / "Resources"
     resources.mkdir(exist_ok=True)
+    copy_design_notices(resources)
     shutil.copy2(
         ROOT / "desktop/macos/.build/release/OpenMaskitCompanion",
         app / "MacOS/OpenMaskitCompanion",

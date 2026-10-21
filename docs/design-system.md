@@ -20,3 +20,6 @@ package, run both Mac architecture suites and backend/lifecycle acceptance, and
 coordinate the web lock to the same release. No local schedule or automatic
 installation is added. Only dark mode is currently supported; a future light
 theme requires coordinated web/native acceptance.
+
+The app bundle includes the shared library LICENSE, NOTICE and trademark policy
+under Contents/Resources/ThirdParty/OpenMaskitDesign.

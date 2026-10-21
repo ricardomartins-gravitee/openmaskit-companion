@@ -1,5 +1,6 @@
 """The production app resolves and uses the immutable native design dependency."""
 
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -56,3 +57,27 @@ def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     assert "NSWindow.willCloseNotification" in settings
     assert "preferences?.windowClosed()" in settings
     assert 'keyboardShortcut("q")' in settings
+
+
+def test_app_bundle_preserves_shared_library_attribution(tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "design_bundle", ROOT / "scripts/bundle.py"
+    )
+    bundle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    monkeypatch.setattr(bundle, "ROOT", tmp_path)
+    checkout = tmp_path / "desktop/macos/.build/checkouts/openmaskit-design-system"
+    checkout.mkdir(parents=True)
+    notices = {
+        "LICENSE": "Apache-2.0 fixture",
+        "NOTICE": "Synthetic upstream attribution",
+        "TRADEMARKS.md": "Synthetic trademark notice",
+    }
+    for name, text in notices.items():
+        (checkout / name).write_text(text)
+    resources = tmp_path / "Contents/Resources"
+    resources.mkdir(parents=True)
+    bundle.copy_design_notices(resources)
+    for name, text in notices.items():
+        assert (resources / "ThirdParty/OpenMaskitDesign" / name).read_text() == text
+    assert "copy_design_notices(resources)" in (ROOT / "scripts/bundle.py").read_text()
