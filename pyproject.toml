@@ -6,7 +6,7 @@ classifiers = ["Operating System :: MacOS :: MacOS X"]
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
-    "openmaskit-connector==0.1.0a1",
+    "openmaskit-connector==0.1.0a2",
     "httpx>=0.28,<1",
 ]
 
@@ -50,4 +50,4 @@ fail_under = 80
 show_missing = true
 
 [tool.uv.sources]
-openmaskit-connector = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git", rev = "2cb467101036faf4141c44074fcc3c8e0b03d100" }
+openmaskit-connector = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git", rev = "0ee39a0e177ce3e169c919d6b4da9e84052202e8" }
