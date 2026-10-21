@@ -21,9 +21,12 @@ from openmaskit_connector.state import read_json, write_json
 from openmaskit_companion import manager
 
 ROOT = Path(__file__).resolve().parents[1]
+CANDIDATE_IMAGE = "openmaskit-connector:candidate"
 
 
 def main(image, candidate_image=None):
+    if candidate_image not in (None, CANDIDATE_IMAGE):
+        raise ValueError("Only the fixed synthetic candidate image is allowed")
     # Fixed product ports must be free; the acceptance never displaces a service.
     for port in (9493, 9494, 9495):
         with socket.socket() as probe:
@@ -65,7 +68,7 @@ def main(image, candidate_image=None):
                 entries = env_file.read_text().splitlines()
                 env_file.write_text(
                     "\n".join(
-                        "COMPANION_IMAGE=" + candidate_image
+                        "COMPANION_IMAGE=" + CANDIDATE_IMAGE
                         if line.startswith("COMPANION_IMAGE=")
                         else line
                         for line in entries
@@ -177,6 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--image")
     parser.add_argument(
         "--candidate-image",
+        choices=[CANDIDATE_IMAGE],
         help="Unpublished image used only in the disposable test stack",
     )
     args = parser.parse_args()
