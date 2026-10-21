@@ -15,6 +15,7 @@ public struct InstallationState: Codable {
   public var connectors: [ConnectorState]?
   public var error: String?
   public var connectionError: String?
+  public var relayTLS: Bool?
 
   enum CodingKeys: String, CodingKey {
     case mode, configured, initialized, ready, paired, dashboard, health, services, connectors,
@@ -22,20 +23,25 @@ public struct InstallationState: Codable {
     case canManageServices = "can_manage_services"
     case serverCount = "server_count"
     case connectionError = "connection_error"
+    case relayTLS = "relay_tls"
   }
 
   public init() {}
   public var needsOnboarding: Bool { !configured }
+  public var needsRelayUpgrade: Bool { mode == .managed && configured && relayTLS == false }
   public var canOpenDashboard: Bool { configured && ready && dashboardURL != nil }
-  public var canUseLocalConnector: Bool { mode == .managed && configured && ready }
+  public var canUseLocalConnector: Bool {
+    mode == .managed && configured && ready && !needsRelayUpgrade
+  }
   public var servicesAreHealthy: Bool {
-    mode == .managed
+    mode == .managed && !needsRelayUpgrade
       && ["openmaskit", "presidio-analyzer", "connector-relay"].allSatisfy { name in
         services.contains { $0.name == name && $0.state == "running" && $0.health == "healthy" }
       }
   }
   public var dashboardURL: URL? { dashboard.flatMap(Self.localDashboardURL) }
   public var title: String {
+    if needsRelayUpgrade { return "Relay security update required" }
     if ready { return health == "healthy" ? "Connected" : "Connected · needs attention" }
     if mode == .existing { return "Existing installation unavailable" }
     if error != nil { return "Check Docker Desktop" }

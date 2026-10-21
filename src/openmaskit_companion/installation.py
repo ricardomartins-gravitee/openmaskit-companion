@@ -22,6 +22,7 @@ MESSAGES = {
     "external_installation": "This installation is managed outside Companion. Use its existing service controls.",
     "not_configured": "Choose an installation in Settings before opening OpenMaskit.",
     "docker_unavailable": "Open Docker Desktop, then retry setup. Your existing OpenMaskit installation has not been changed.",
+    "relay_security_update": "Upgrade the local relay to verified TLS in Settings before starting local MCP connections. Your saved rules and settings are kept.",
 }
 
 

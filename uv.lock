@@ -874,8 +874,10 @@ name = "openmaskit-companion"
 version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "openmaskit-connector" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -895,8 +897,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.2,<51" },
     { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "openmaskit-connector", git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=56d88cd5c97d7428760abadbd9d1511c1f8db972" },
+    { name = "openmaskit-connector", git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=d12eca19164bea9c502ce3cbb2fd94db49ad76ca" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
 ]
 
 [package.metadata.requires-dev]
@@ -914,8 +918,8 @@ dev = [
 
 [[package]]
 name = "openmaskit-connector"
-version = "0.1.0a3"
-source = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=56d88cd5c97d7428760abadbd9d1511c1f8db972#56d88cd5c97d7428760abadbd9d1511c1f8db972" }
+version = "0.1.0a4"
+source = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=d12eca19164bea9c502ce3cbb2fd94db49ad76ca#d12eca19164bea9c502ce3cbb2fd94db49ad76ca" }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },

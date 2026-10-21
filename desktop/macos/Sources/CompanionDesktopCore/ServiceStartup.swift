@@ -2,7 +2,7 @@ import CompanionPolicy
 import Foundation
 
 public enum StartupFailure: LocalizedError {
-  case dockerUnavailable, connectorUnavailable, servicesUnavailable
+  case dockerUnavailable, connectorUnavailable, servicesUnavailable, relaySecurityUpdate
   public var errorDescription: String? {
     switch self {
     case .dockerUnavailable:
@@ -10,6 +10,7 @@ public enum StartupFailure: LocalizedError {
     case .connectorUnavailable:
       return "The local connector could not connect. Check pairing in Settings."
     case .servicesUnavailable: return "Services need attention. Check their status in Settings."
+    case .relaySecurityUpdate: return "Upgrade the local relay to verified TLS in Settings first."
     }
   }
 }
@@ -64,7 +65,9 @@ public enum StartupFailure: LocalizedError {
   ) async throws -> InstallationState? {
     guard !launchAttempted else { return nil }
     launchAttempted = true
-    guard enabled && state.configured && state.mode == .managed else { return nil }
+    guard enabled && state.configured && state.mode == .managed && !state.needsRelayUpgrade else {
+      return nil
+    }
     return try await Self.start(state: state, approvedProfiles: approvedProfiles, actions: actions)
   }
 
@@ -72,6 +75,7 @@ public enum StartupFailure: LocalizedError {
     state: InstallationState, approvedProfiles: Int, actions: StartupActions
   ) async throws -> InstallationState {
     guard state.configured && state.mode == .managed else { return state }
+    guard !state.needsRelayUpgrade else { throw StartupFailure.relaySecurityUpdate }
     try Task.checkCancellation()
     actions.progress("Checking Docker…")
     if try await !actions.dockerReady() {

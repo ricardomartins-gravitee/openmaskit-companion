@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ricardomartins-gravitee/openmaskit-connector
-          ref: 56d88cd5c97d7428760abadbd9d1511c1f8db972
+          ref: d12eca19164bea9c502ce3cbb2fd94db49ad76ca
           path: .runtime/connector-source
       - run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package openmaskit-connector
       - name: Install the reviewed connector source from its verified wheel

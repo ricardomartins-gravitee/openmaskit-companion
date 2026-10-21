@@ -93,7 +93,7 @@ def test_existing_initialized_exact_target_is_idempotent(host):
     existing = respx.get(manager.WEB + "/api/targets/custom/synthetic").respond(
         200,
         json={
-            "config": {"url": "http://connector-relay:9495/mcp/computer-test/fixture"}
+            "config": {"url": "https://connector-relay:9495/mcp/computer-test/fixture"}
         },
     )
     health = respx.get(manager.WEB + "/health").respond(
@@ -125,7 +125,7 @@ def test_existing_initialized_exact_target_is_idempotent(host):
 
 @respx.mock
 def test_disconnected_exact_target_reactivates_without_replacing_config(host):
-    url = "http://connector-relay:9495/mcp/computer-test/fixture"
+    url = "https://connector-relay:9495/mcp/computer-test/fixture"
     respx.get(manager.WEB + "/api/csrf").respond(200, json={"token": "synthetic-csrf"})
     respx.post(manager.WEB + "/api/targets/custom").respond(409)
     respx.get(manager.WEB + "/api/targets/custom/synthetic").respond(

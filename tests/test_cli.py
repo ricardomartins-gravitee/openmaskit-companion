@@ -55,6 +55,7 @@ def test_setup_rejects_unpinned_image_with_safe_error(tmp_path, capsys):
 def test_lifecycle_forwards_only_scoped_compose_arguments(
     tmp_path, monkeypatch, capsys, action, expected
 ):
+    manager.initialize(tmp_path, manager.IMAGE_PREFIX + "a" * 64)
     calls = []
     monkeypatch.setattr(manager, "compose", lambda _home, *args: calls.append(args))
     monkeypatch.setattr(

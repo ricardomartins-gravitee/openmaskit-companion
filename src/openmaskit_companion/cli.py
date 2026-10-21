@@ -10,7 +10,7 @@ from pathlib import Path
 
 from openmaskit_connector.state import identifier
 
-from . import __version__, installation, manager
+from . import __version__, installation, manager, relay_tls
 
 
 def default_home():
@@ -34,6 +34,8 @@ def parser():
     commands.add_parser("start-dependencies")
     commands.add_parser("start-installed")
     commands.add_parser("wait-services")
+    secure = commands.add_parser("secure-relay")
+    secure.add_argument("--image", required=True)
     attach = commands.add_parser("connect-existing")
     attach.add_argument("--url", required=True)
     prepare = commands.add_parser("prepare-managed")
@@ -50,6 +52,7 @@ def parser():
     code.add_argument("--name", default="My computer")
     pair = commands.add_parser("pair")
     pair.add_argument("--endpoint", default=manager.RELAY)
+    pair.add_argument("--ca-file", type=Path)
     pair.add_argument(
         "--code-stdin",
         action="store_true",
@@ -97,11 +100,40 @@ def main(argv=None):
                 )
                 raise SystemExit(1) from None
         supplied = list(sys.argv[1:] if argv is None else argv)
+        try:
+            if args.action == "pair":
+                if not args.endpoint.startswith("https://"):
+                    raise ValueError("Verified HTTPS is required")
+                supplied += ["--endpoint", args.endpoint]
+                if args.ca_file is None:
+                    relay_tls.validate(home)
+                    supplied += ["--ca-file", str(home / "stack/tls/ca.pem")]
+            if args.action == "connect" and (home / "stack/managed.json").is_file():
+                manager.require_tls(home)
+                from openmaskit_connector.state import read_json
+
+                connection = read_json(home / "connection.json")
+                if connection.get("endpoint") != manager.RELAY or connection.get(
+                    "ca_file"
+                ) != str(home / "stack/tls/ca.pem"):
+                    raise ValueError(
+                        "The paired connection must use this installation's verified TLS"
+                    )
+        except (ValueError, OSError):
+            error = installation.InstallationError("relay_security_update")
+            print(
+                json.dumps({"error": str(error), "code": error.code}), file=sys.stderr
+            )
+            raise SystemExit(1) from None
         connector_main(["--home", str(home), *supplied])
         return
     try:
         if args.action == "status":
             result = manager.status(home)
+        elif args.action == "secure-relay":
+            from .relay_upgrade import upgrade
+
+            result = upgrade(home, args.image)
         elif args.action == "docker-status":
             result = manager.docker_ready(home)
         elif args.action == "connector-status":
@@ -113,7 +145,7 @@ def main(argv=None):
                 manager.wait_dashboard(home)
             result = manager.refresh_connections(home)
         elif args.action in {"start-dependencies", "start-installed", "wait-services"}:
-            installation.require_configured_managed(home)
+            manager.require_secure_managed(home)
             services = (
                 ["presidio-analyzer", "connector-relay"]
                 if args.action == "start-dependencies"
@@ -155,6 +187,8 @@ def main(argv=None):
             installation.require_managed(home)
             result = manager.initialize(home, args.image)
         elif args.action == "start":
+            installation.require_managed(home)
+            manager.require_tls(home)
             manager.compose(home, "up", "--detach", "--wait", "--wait-timeout", "300")
             result = manager.finish_start(home)
         elif args.action == "stop":

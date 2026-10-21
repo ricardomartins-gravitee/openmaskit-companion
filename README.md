@@ -30,6 +30,8 @@ under **Settings → General → Start services and local MCPs when Companion op
 Manual stops are respected until the next app launch. Fresh onboarding and
 externally managed installations never trigger automatic startup. No login item
 or automatic installation/update is enabled; automatic startup never pulls images.
+An existing managed installation whose relay has not yet been upgraded to
+verified TLS is blocked from automatic startup until you explicitly upgrade it.
 While its connector runs, Companion sends a protocol ping through OpenMaskit
 once a minute to prevent the relay's idle timeout. It never calls MCP tools or
 replays interrupted operations as part of these checks.
@@ -98,8 +100,26 @@ Choose **Companion installation** during onboarding or in Settings, then
 action prepares, starts and verifies all three services before completing setup.
 If interrupted, retry **Start and Finish Setup**; existing Companion project
 files, credentials, volumes and rules are reused. No other installation is adopted.
+Managed relay traffic uses verified HTTPS on loopback. Fresh setup checks that
+the selected relay image supports TLS before preparing the installation; use a
+compatible TLS-capable image.
 
-For the CLI, use a tested immutable connector relay image digest:
+For an existing managed installation using the older plaintext relay, use
+**Settings → Installation → Upgrade Relay Security**. Automatic startup stays
+blocked until this explicit upgrade succeeds. Companion validates the image,
+makes a private backup of its own installation, stops its services, provisions
+local certificates and migrates only the relay URL schemes owned by this
+Companion pairing. The OpenMaskit project, rules, encryption key, pairing token
+and approved profiles are retained. A pending upgrade blocks service startup;
+retry the upgrade in Settings to resume. TLS failures never fall back to
+plaintext. Companion does not add the local CA to macOS's system trust store.
+
+The local relay leaf certificate is valid for 365 days and its CA for five
+years. Automated certificate renewal is not implemented yet; manual renewal
+support remains a development limitation.
+
+For the CLI, use a tested immutable connector relay image digest that supports
+the local TLS relay options:
 
 
 ```sh
@@ -113,7 +133,9 @@ The pairing code is single-use and expires after two minutes. Stop with
 `openmaskit-companion stop`; data is retained. Existing managed installations
 keep their current project, volume, state and containers. Changing the relay
 image repository does not force a migration or recreate an existing stack.
-The older `setup` CLI command remains preparation-only for compatibility.
+The older `setup` CLI command remains preparation-only for compatibility; it
+does not start services or complete installation. Existing plaintext-relay
+installations must be upgraded explicitly from Settings before service startup.
 
 To connect through the CLI instead:
 
