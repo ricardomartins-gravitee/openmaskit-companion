@@ -14,13 +14,7 @@ def host(tmp_path):
     manager.initialize(tmp_path, manager.IMAGE_PREFIX + "a" * 64)
     installation.save(tmp_path, "managed", manager.WEB)
     write_json(
-        tmp_path / "connection.json",
-        {
-            "id": "computer-test",
-            "token": "synthetic",
-            "endpoint": manager.RELAY,
-            "ca_file": str(tmp_path / "stack/tls/ca.pem"),
-        },
+        tmp_path / "connection.json", {"id": "computer-test", "token": "synthetic"}
     )
     write_json(
         tmp_path / "profiles.json",
@@ -199,7 +193,7 @@ def target(name="fixture", url=None, source="custom"):
         "source": source,
         "config": {
             "transport": "http",
-            "url": url or "https://connector-relay:9495/mcp/computer-test/fixture",
+            "url": url or "http://connector-relay:9495/mcp/computer-test/fixture",
         },
     }
 
@@ -208,9 +202,9 @@ def target(name="fixture", url=None, source="custom"):
 def test_reconnect_refreshes_only_owned_active_approved_targets(host):
     rows = [
         target(),
-        target("other", "https://connector-relay:9495/mcp/other-computer/fixture"),
+        target("other", "http://connector-relay:9495/mcp/other-computer/fixture"),
         target(
-            "unapproved", "https://connector-relay:9495/mcp/computer-test/unapproved"
+            "unapproved", "http://connector-relay:9495/mcp/computer-test/unapproved"
         ),
         target("inactive"),
         target("remote", "https://example.invalid/mcp"),

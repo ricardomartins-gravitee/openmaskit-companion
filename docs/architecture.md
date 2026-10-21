@@ -40,10 +40,8 @@ The proxy credential is distinct from admin and connector credentials.
 OpenMaskit stores its proxy header through its normal encrypted HTTP
 configuration path. The connector relay rejects requests with a browser Origin.
 MCP Host validation uses the SDK's DNS-rebinding protection. Host-facing ports
-are bound to loopback. The managed relay endpoint uses verified HTTPS on
-loopback. Its private CA is trusted only by the specific local client/container
-processes that connect to that relay; it is never installed as a macOS system
-root. Remote TLS deployments require a separate design and acceptance.
+are bound to loopback. Remote TLS deployments require a separate design and
+acceptance.
 
 The host stores exact absolute executable paths, argument arrays, environment
 and working directories in a private file. The relay can select only locally
@@ -115,41 +113,6 @@ does not automatically pull a new image, recreate containers or migrate state.
 Any later manual update must use a verified compatible image, a complete backup
 and a rollback plan. No automatic update or login item is enabled. Quitting the
 app stops the local host connector; it does not stop managed containers.
-
-### Local relay TLS and legacy upgrade
-
-The local connector relay listens for its host-facing connection on HTTPS at
-`127.0.0.1:9495`. Companion provisions a private CA and a separate relay leaf
-certificate in its private state. The relay private key is mounted read-only
-into the relay container; the CA private key stays on the host. The Companion
-manager and connector use the CA in their own TLS client contexts. No certificate
-is added to macOS's trust store, and a failed TLS handshake never falls back to
-plaintext.
-
-An existing configured managed installation that reports `relay_tls: false`
-requires an explicit upgrade from **Settings → Installation → Upgrade Relay
-Security**. Automatic launch and manual service startup are blocked while this
-upgrade is required. The app validates a compatible TLS-capable relay image,
-stops its connector and services, and creates a private backup under the
-Companion backup directory before changing the managed stack. It retains the
-existing Compose project, OpenMaskit volume and encryption key, rules and
-settings, pairing token, and approved profiles. It changes only the relay URL
-schemes belonging to this Companion's paired connector; unrelated, marketplace,
-or other-computer targets are left alone. It does not migrate or replace
-OpenMaskit's other configuration. The connection endpoint and CA file for this
-Companion pairing are updated to the local HTTPS endpoint.
-
-An upgrade progress marker makes an interrupted migration remain visibly
-pending and blocks service startup. Retrying the explicit Settings action
-resumes preparation and retains the original backups; it does not start an unverified
-plaintext relay. Fresh managed setup provisions TLS material as part of
-preparation and verifies the selected image's TLS capability before writing new
-installation state; select a compatible image.
-
-The current relay leaf certificate is issued for 365 days and the local CA for
-five years. Automated renewal and a supported manual renewal workflow are not
-implemented yet. Certificate renewal remains a development limitation and must
-be completed before treating this as a production-ready deployment.
 
 ## App launch and menu bar operation
 

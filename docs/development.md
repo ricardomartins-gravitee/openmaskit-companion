@@ -64,14 +64,6 @@ fixture. No real mailbox tools are invoked.
 The same fixture verifies protocol keepalive through the masked proxy, followed
 by another synthetic tool call, without altering saved rules or privacy settings.
 
-`scripts/relay_upgrade_acceptance.py` exercises the explicit HTTP-to-TLS upgrade
-in a separate generated Compose project with ephemeral ports. It compares every
-SQLite table and the encryption key while allowing only the paired target's URL
-scheme to change. It then verifies TLS reconnection, masking, alias reversal,
-rules and privacy settings. It uses only the locally built fixed candidate image;
-the production manager continues to require an immutable published image.
-The integration workflow runs both Docker acceptance fixtures.
-
 To keep a review build separate from an installed app, use
 `scripts/bundle.py --output-dir .runtime/review-dist` (with the verified relay
 image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and

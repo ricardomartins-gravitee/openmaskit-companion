@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 import httpx
-import yaml
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from openmaskit_connector.state import read_json, write_json
@@ -24,36 +23,6 @@ from openmaskit_companion import installation, manager
 
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_IMAGE = "openmaskit-connector:candidate"
-
-
-def candidate_preflight(image):
-    """Exercise TLS capability using only this fixture's fixed local image."""
-    if image != manager.IMAGE_PREFIX + "0" * 64:
-        raise ValueError("Unexpected synthetic image placeholder")
-    result = subprocess.run(
-        [
-            manager.docker_binary(),
-            "run",
-            "--rm",
-            "--network",
-            "none",
-            "--read-only",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
-            CANDIDATE_IMAGE,
-            "relay",
-            "--help",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    if result.returncode or not all(
-        flag in result.stdout for flag in ("--tls-cert", "--tls-key")
-    ):
-        raise ValueError("The synthetic candidate must support verified TLS")
 
 
 def main(image, candidate_image=None, isolated_ports=False):
@@ -71,7 +40,7 @@ def main(image, candidate_image=None, isolated_ports=False):
         # Overrides exist only inside this synthetic test process/driver.
         manager.WEB = installation.MANAGED_URL = f"http://127.0.0.1:{web}"
         manager.MCP = f"http://127.0.0.1:{mcp}"
-        manager.RELAY = f"https://127.0.0.1:{relay}"
+        manager.RELAY = f"http://127.0.0.1:{relay}"
     (ROOT / ".runtime").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix="manager-acceptance-", dir=ROOT / ".runtime"
@@ -79,23 +48,14 @@ def main(image, candidate_image=None, isolated_ports=False):
         home = Path(directory)
         connector = None
         entry = [sys.executable, "-m", "openmaskit_companion.cli"]
-        if isolated_ports or candidate_image is not None:
+        if isolated_ports:
             driver = home / "synthetic-driver.py"
             driver.write_text(
-                "import sys\n"
-                f"sys.path.insert(0,{str(ROOT / 'scripts')!r})\n"
                 "from openmaskit_companion import manager,installation,cli\n"
                 f"manager.WEB=installation.MANAGED_URL={manager.WEB!r}\n"
                 f"manager.MCP={manager.MCP!r}\n"
                 f"manager.RELAY={manager.RELAY!r}\n"
-                + (
-                    "from openmaskit_companion import relay_upgrade\n"
-                    "from manager_acceptance import candidate_preflight\n"
-                    "relay_upgrade.preflight=candidate_preflight\n"
-                    if candidate_image is not None
-                    else ""
-                )
-                + "cli.main()\n"
+                "cli.main()\n"
             )
             entry = [sys.executable, str(driver)]
 
@@ -123,19 +83,14 @@ def main(image, candidate_image=None, isolated_ports=False):
             assert not cli("status")["configured"]
             if isolated_ports:
                 path = home / "stack/compose.yaml"
-                config = yaml.safe_load(path.read_text())
-                proxy = config["services"]["openmaskit"]
-                proxy["environment"]["OPENMASKIT_WEB_PORT"] = str(web)
-                proxy["environment"]["OPENMASKIT_MCP_PORT"] = str(mcp)
-                replacements = {"9493": str(web), "9494": str(mcp)}
-                proxy["command"] = [
-                    replacements.get(str(value), value) for value in proxy["command"]
-                ]
-                proxy["ports"] = [f"127.0.0.1:{web}:{web}", f"127.0.0.1:{mcp}:{mcp}"]
-                config["services"]["connector-relay"]["ports"] = [
-                    f"127.0.0.1:{relay}:9495"
-                ]
-                path.write_text(yaml.safe_dump(config, sort_keys=False))
+                text = path.read_text()
+                for old, new in [(9493, web), (9494, mcp)]:
+                    text = text.replace(f'"{old}"', f'"{new}"').replace(
+                        f"127.0.0.1:{old}:{old}", f"127.0.0.1:{new}:{new}"
+                    )
+                path.write_text(
+                    text.replace("127.0.0.1:9495:9495", f"127.0.0.1:{relay}:9495")
+                )
             if candidate_image is not None:
                 # This isolated synthetic fixture tests an unpublished relay candidate.
                 # Production setup still rejects mutable/unapproved image references.
@@ -310,17 +265,6 @@ def main(image, candidate_image=None, isolated_ports=False):
             print(
                 "idempotent registration, read-only attachment, automatic-start ordering, connector restart/reconnect, protocol keepalive preserving rules/settings, private status, isolated project and live host MCP round trip."
             )
-        except Exception:
-            # Only this disposable synthetic project's logs are captured.
-            diagnostic = ROOT / ".runtime/manager-acceptance-failure.log"
-            try:
-                diagnostic.write_text(
-                    manager.compose(home, "logs", "--no-color", "--tail", "80")
-                )
-                diagnostic.chmod(0o600)
-            except Exception:
-                pass
-            raise
         finally:
             if connector is not None and connector.poll() is None:
                 connector.terminate()

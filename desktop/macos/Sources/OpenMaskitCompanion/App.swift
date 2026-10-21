@@ -77,14 +77,14 @@ struct LocalProfile: Codable, Identifiable {
   func invoke(_ arguments: [String], input: Data? = nil) async throws -> Data {
     let executable = backend
     let allArguments = baseArguments + arguments
-    let longActions = ["start", "prepare-managed", "secure-relay"]
+    let longActions = ["start", "prepare-managed"]
     let runtimeActions = [
       "start-dependencies", "start-installed", "wait-services", "refresh-connections",
       "keep-connections", "register",
     ]
     let timeout: TimeInterval =
       longActions.contains(arguments.first ?? "")
-      ? 600
+      ? 420
       : (runtimeActions.contains(arguments.first ?? "") ? 200 : 45)
     let result = try await BackendProcess.run(
       executable: executable, arguments: allArguments, input: input, timeout: timeout)
@@ -93,7 +93,6 @@ struct LocalProfile: Codable, Identifiable {
       let safeCodes = [
         "invalid_url", "unavailable", "not_openmaskit", "database_unavailable",
         "invalid_selection", "external_installation", "not_configured", "docker_unavailable",
-        "relay_security_update",
       ]
       let detail = failure.flatMap { safeCodes.contains($0["code"] ?? "") ? $0["error"] : nil }
       throw NSError(
@@ -235,24 +234,6 @@ struct LocalProfile: Codable, Identifiable {
     guard !busy else { return }
     stopConnector()
     await action(["stop"], success: "Services stopped. Your rules and settings are saved.")
-  }
-
-  func secureRelay() async {
-    guard !busy && installation.needsRelayUpgrade, let image = releaseImage else { return }
-    busy = true
-    progress = "Backing up your installation and enabling verified relay encryption…"
-    defer {
-      busy = false
-      progress = ""
-    }
-    do {
-      stopConnector()
-      try await waitForConnectorExit()
-      _ = try await invoke(["secure-relay", "--image", image])
-      installation = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
-      busy = false
-      await startAll()
-    } catch { message = error.localizedDescription }
   }
 
   func connectExisting(_ address: String) async {
@@ -398,7 +379,14 @@ struct LocalProfile: Codable, Identifiable {
 
   private func startConnectorProcess() async throws {
     if connectorRunning { return }
-    try await waitForConnectorExit()
+    if let old = retiringConnector {
+      for _ in 0..<50 {
+        if !old.isRunning { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      guard !old.isRunning else { throw StartupFailure.connectorUnavailable }
+      retiringConnector = nil
+    }
     let process = Process()
     process.executableURL = backend
     process.arguments = baseArguments + ["connect"]
@@ -416,17 +404,6 @@ struct LocalProfile: Codable, Identifiable {
     connector = process
     connectorRunning = true
     connectorWasOnline = false
-  }
-
-  private func waitForConnectorExit() async throws {
-    if let old = retiringConnector {
-      for _ in 0..<50 {
-        if !old.isRunning { break }
-        try await Task.sleep(for: .milliseconds(100))
-      }
-      guard !old.isRunning else { throw StartupFailure.connectorUnavailable }
-      retiringConnector = nil
-    }
   }
 
   func stopConnector() {

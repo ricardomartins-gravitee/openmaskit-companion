@@ -18,8 +18,6 @@ from mcp.client.streamable_http import streamable_http_client
 from openmaskit_connector.relay import create_app
 from openmaskit_connector.state import read_json, write_json
 
-from openmaskit_companion import relay_tls
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -105,7 +103,6 @@ def test_app_default_home_remains_the_existing_companion_directory(
 
 @asynccontextmanager
 async def relay(home):
-    relay_tls.provision(home)
     settings = {
         "admin_token": secrets.token_urlsafe(32),
         "proxy_token": secrets.token_urlsafe(32),
@@ -122,8 +119,6 @@ async def relay(home):
             access_log=False,
             log_level="critical",
             ws_max_size=1_048_576,
-            ssl_certfile=str(home / "stack/tls/relay.pem"),
-            ssl_keyfile=str(home / "stack/tls/relay.key"),
         )
     )
     task = asyncio.create_task(server.serve(sockets=[sock]))
@@ -133,7 +128,7 @@ async def relay(home):
                 if task.done():
                     await task
                 await asyncio.sleep(0.01)
-        yield f"https://127.0.0.1:{sock.getsockname()[1]}", settings
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}", settings
     finally:
         server.should_exit = True
         await asyncio.wait_for(task, 15)
@@ -142,11 +137,7 @@ async def relay(home):
 
 async def test_app_backend_pairs_and_runs_external_connector(tmp_path):
     async with relay(tmp_path) as (endpoint, settings):
-        async with httpx.AsyncClient(
-            base_url=endpoint,
-            trust_env=False,
-            verify=relay_tls.client_context(tmp_path),
-        ) as api:
+        async with httpx.AsyncClient(base_url=endpoint, trust_env=False) as api:
             api.headers["Authorization"] = "Bearer " + settings["admin_token"]
             response = await api.post("/admin/pairings", json={"name": "Synthetic Mac"})
             code = response.json()["code"]
@@ -157,8 +148,6 @@ async def test_app_backend_pairs_and_runs_external_connector(tmp_path):
                 "--endpoint",
                 endpoint,
                 "--code-stdin",
-                "--ca-file",
-                str(tmp_path / "stack/tls/ca.pem"),
                 text=code + "\n",
             )
             assert paired["paired"]
@@ -200,7 +189,6 @@ async def test_app_backend_pairs_and_runs_external_connector(tmp_path):
                     httpx.AsyncClient(
                         headers={"Authorization": "Bearer " + settings["proxy_token"]},
                         trust_env=False,
-                        verify=relay_tls.client_context(tmp_path),
                     ) as mcp_http,
                     streamable_http_client(
                         f"{endpoint}/mcp/{paired['id']}/fixture", http_client=mcp_http

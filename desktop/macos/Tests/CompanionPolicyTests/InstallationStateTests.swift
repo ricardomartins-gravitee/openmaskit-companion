@@ -40,26 +40,6 @@ final class InstallationStateTests: XCTestCase {
     XCTAssertFalse(state.canUseLocalConnector)
   }
 
-  func testManagedInstallationWithoutRelayTLSRequiresUpgrade() {
-    var state = InstallationState()
-    state.mode = .managed
-    state.configured = true
-    state.ready = true
-    state.paired = true
-    state.relayTLS = false
-    state.dashboard = "http://127.0.0.1:9493"
-    state.health = "healthy"
-    state.services = ["openmaskit", "presidio-analyzer", "connector-relay"].map {
-      ServiceState(name: $0, state: "running", health: "healthy")
-    }
-
-    XCTAssertTrue(state.needsRelayUpgrade)
-    XCTAssertTrue(state.canOpenDashboard)
-    XCTAssertFalse(state.canUseLocalConnector)
-    XCTAssertFalse(state.servicesAreHealthy)
-    XCTAssertEqual(state.title, "Relay security update required")
-  }
-
   func testBrowserOnlyAcceptsLocalDashboardOrigins() {
     for value in [
       "http://127.0.0.1:9473", "http://localhost:9473", "https://[::1]:9473",
@@ -88,19 +68,5 @@ final class InstallationStateTests: XCTestCase {
     XCTAssertEqual(state.serverCount, 2)
     XCTAssertEqual(state.title, "Connected · needs attention")
     XCTAssertFalse(state.canManageServices)
-  }
-
-  func testPublicBackendStatusWithoutRelayTLSRemainsBackwardsCompatible() throws {
-    let json = """
-      {"mode":"managed","configured":true,"initialized":true,"ready":true,"paired":true,
-      "can_manage_services":true,"dashboard":"http://127.0.0.1:9493","health":"healthy",
-      "server_count":0,"services":[],"connectors":[]}
-      """
-    let state = try JSONDecoder().decode(InstallationState.self, from: Data(json.utf8))
-
-    XCTAssertNil(state.relayTLS)
-    XCTAssertFalse(state.needsRelayUpgrade)
-    XCTAssertTrue(state.canUseLocalConnector)
-    XCTAssertEqual(state.title, "Connected")
   }
 }

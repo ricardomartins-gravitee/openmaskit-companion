@@ -82,34 +82,6 @@ import XCTest
     }
   }
 
-  func testRelaySecurityUpgradeBlocksAutomaticAndManualStartupBeforeSideEffects() async {
-    let harness = StartupHarness()
-    var state = harness.state
-    state.relayTLS = false
-
-    do {
-      let result = try await ServiceStartup().onLaunch(
-        state: state, enabled: true, approvedProfiles: 1, actions: harness.actions)
-      XCTAssertNil(result)
-    } catch {
-      XCTFail("Automatic startup should be skipped while relay TLS needs an upgrade: \(error)")
-    }
-    XCTAssertTrue(harness.events.isEmpty)
-
-    do {
-      _ = try await ServiceStartup.start(
-        state: state, approvedProfiles: 1, actions: harness.actions)
-      XCTFail("Manual startup should require a relay security upgrade")
-    } catch let failure as StartupFailure {
-      guard case .relaySecurityUpdate = failure else {
-        return XCTFail("Expected relay security upgrade failure, got \(failure)")
-      }
-    } catch {
-      XCTFail("Expected relay security upgrade failure, got \(error)")
-    }
-    XCTAssertTrue(harness.events.isEmpty, "Upgrade guard must run before Docker or service actions")
-  }
-
   func testDockerOpensOnceThenWaitsForReadiness() async throws {
     let harness = StartupHarness()
     harness.dockerReadyAfter = 2

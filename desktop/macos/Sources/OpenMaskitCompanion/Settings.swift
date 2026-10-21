@@ -77,17 +77,6 @@ struct SettingsScreen: View {
         }
       }
     }
-    if model.installation.needsRelayUpgrade {
-      CompanionPanel("Relay security") {
-        Text(
-          "Enable verified encryption for the local relay connection. Companion backs up your installation first, keeps your rules and pairing, and briefly stops its services."
-        )
-        .foregroundStyle(CompanionTheme.secondary).fixedSize(horizontal: false, vertical: true)
-        Button("Upgrade Relay Security") { Task { await model.secureRelay() } }
-          .buttonStyle(CompanionButtonStyle(kind: .primary))
-          .disabled(model.busy || model.releaseImage == nil)
-      }
-    }
     if model.installation.canManageServices {
       CompanionPanel("Services") {
         if model.installation.services.isEmpty {
@@ -107,7 +96,7 @@ struct SettingsScreen: View {
           }
           .buttonStyle(CompanionButtonStyle(kind: .primary))
           .disabled(
-            !model.installation.configured || model.busy || model.installation.needsRelayUpgrade
+            !model.installation.configured || model.busy
               || model.runtimeIsReady)
           Button("Stop All") {
             Task { await model.stopAll() }
@@ -188,14 +177,8 @@ struct CompanionMenu: View {
     Button("Open OpenMaskit Dashboard") { Task { await model.openDashboard() } }
       .disabled(!model.installation.canOpenDashboard || model.busy)
     if model.installation.canManageServices && model.installation.configured {
-      if model.installation.needsRelayUpgrade {
-        Button("Upgrade Relay Security…") {
-          model.settingsSection = "installation"
-          preferences.revealMainWindow()
-        }
-      }
       Button("Start All") { Task { await model.startAll() } }
-        .disabled(model.busy || model.runtimeIsReady || model.installation.needsRelayUpgrade)
+        .disabled(model.busy || model.runtimeIsReady)
       Button("Stop All") { Task { await model.stopAll() } }
         .disabled(
           model.busy

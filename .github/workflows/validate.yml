@@ -24,9 +24,9 @@ jobs:
       contents: read
       attestations: read
       actions: read
-    uses: ricardomartins-gravitee/openmaskit-connector/.github/workflows/intel-wheel.yml@d12eca19164bea9c502ce3cbb2fd94db49ad76ca
+    uses: ricardomartins-gravitee/openmaskit-connector/.github/workflows/intel-wheel.yml@56d88cd5c97d7428760abadbd9d1511c1f8db972
     with:
-      source-ref: d12eca19164bea9c502ce3cbb2fd94db49ad76ca
+      source-ref: 56d88cd5c97d7428760abadbd9d1511c1f8db972
 
   integration:
     needs: [quality, security]
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ricardomartins-gravitee/openmaskit-connector
-          ref: d12eca19164bea9c502ce3cbb2fd94db49ad76ca
+          ref: 56d88cd5c97d7428760abadbd9d1511c1f8db972
           path: .runtime/connector-source
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
@@ -50,8 +50,6 @@ jobs:
         run: docker buildx build --load --provenance=false --pull --tag openmaskit-connector:candidate .runtime/connector-source
       - name: Exercise the companion manager against an isolated candidate relay
         run: uv run --frozen --no-sync --no-build python scripts/manager_acceptance.py --candidate-image openmaskit-connector:candidate
-      - name: Verify legacy relay TLS migration and complete state preservation
-        run: uv run --frozen --no-sync --no-build python scripts/relay_upgrade_acceptance.py
 
   test:
     needs: [intel-wheel, integration]
@@ -73,7 +71,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ricardomartins-gravitee/openmaskit-connector
-          ref: d12eca19164bea9c502ce3cbb2fd94db49ad76ca
+          ref: 56d88cd5c97d7428760abadbd9d1511c1f8db972
           path: .runtime/connector-source
       - if: matrix.os != 'macos-15-intel'
         run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle --no-install-package openmaskit-connector
@@ -157,7 +155,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ricardomartins-gravitee/openmaskit-connector
-          ref: d12eca19164bea9c502ce3cbb2fd94db49ad76ca
+          ref: 56d88cd5c97d7428760abadbd9d1511c1f8db972
           path: .runtime/connector-source
       - name: Install the reviewed connector source from its verified wheel
         run: uv run --frozen --no-sync --no-build python scripts/install_connector.py

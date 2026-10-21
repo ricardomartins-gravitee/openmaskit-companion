@@ -17,12 +17,12 @@ from pathlib import Path
 import httpx
 from openmaskit_connector.state import private_dir, read_json, write_json
 
-from . import installation, relay_tls
+from . import installation
 
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
 MCP = "http://127.0.0.1:9494"
-RELAY = "https://127.0.0.1:9495"
+RELAY = "http://127.0.0.1:9495"
 IMAGE_PREFIX = "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
 
 
@@ -32,9 +32,7 @@ def image_digest(value: str) -> str:
     suffix = value[len(IMAGE_PREFIX) :]
     if len(suffix) != 64 or any(c not in "0123456789abcdef" for c in suffix):
         raise ValueError("Invalid release digest")
-    # Reconstruct the Docker reference from a fixed repository and binary
-    # digest; the caller's original text never becomes a command argument.
-    return IMAGE_PREFIX + bytes.fromhex(suffix).hex()
+    return value
 
 
 def docker_binary():
@@ -103,7 +101,6 @@ def initialize(home: Path, image: str):
         "".join(f"{key}={value}\n" for key, value in env.items())
     )
     (stack / ".env").chmod(0o600)
-    relay_tls.prepare_stack(home)
     project = PROJECT + "-" + secrets.token_hex(6)
     write_json(
         stack / "managed.json",
@@ -196,7 +193,6 @@ def status(home: Path):
         "services": [],
         "paired": (home / "connection.json").is_file(),
         "automatic_updates": False,
-        "relay_tls": tls_ready(home) if selected["mode"] == "managed" else False,
     }
     if selected["mode"] == "existing":
         result["paired"] = False
@@ -258,11 +254,6 @@ def prepare_managed(home, image):
     except (ValueError, OSError, subprocess.TimeoutExpired):
         raise installation.InstallationError("docker_unavailable") from None
     if not (home / "stack/managed.json").exists():
-        # Fresh onboarding must verify the pinned image supports TLS before
-        # creating private state or selecting the managed installation.
-        from . import relay_upgrade
-
-        relay_upgrade.preflight(image)
         initialize(home, image)
     else:
         marker = read_json(home / "stack/managed.json")
@@ -295,13 +286,11 @@ def finish_start(home):
 
 def admin(home: Path, method, path, body=None):
     installation.require_managed(home)
-    require_tls(home)
     settings = read_json(home / "stack/relay/relay.json")
     with httpx.Client(
         base_url=RELAY,
         trust_env=False,
         timeout=5,
-        verify=relay_tls.client_context(home),
         headers={"Authorization": "Bearer " + settings["admin_token"]},
     ) as api:
         response = api.request(method, path, json=body)
@@ -309,38 +298,8 @@ def admin(home: Path, method, path, body=None):
         return response.json()
 
 
-def require_tls(home):
-    try:
-        if (home / "stack/tls-upgrade.json").exists() or (
-            home / "stack/tls-upgrade.json"
-        ).is_symlink():
-            raise ValueError("The relay security upgrade is incomplete")
-        relay_tls.validate_stack(home)
-    except (ValueError, OSError):
-        raise installation.InstallationError("relay_security_update") from None
-
-
-def require_secure_managed(home):
-    installation.require_configured_managed(home)
-    require_tls(home)
-    if not tls_ready(home):
-        raise installation.InstallationError("relay_security_update")
-
-
-def tls_ready(home):
-    try:
-        require_tls(home)
-        paired = read_json(home / "connection.json")
-        return not paired or (
-            paired.get("endpoint") == RELAY
-            and paired.get("ca_file") == str(home / "stack/tls/ca.pem")
-        )
-    except (ValueError, OSError):
-        return False
-
-
 def docker_ready(home):
-    require_secure_managed(home)
+    installation.require_configured_managed(home)
     binary = docker_binary()
     local_docker(binary, os.environ)
     try:
@@ -357,7 +316,7 @@ def docker_ready(home):
 
 
 def connector_status(home):
-    require_secure_managed(home)
+    installation.require_configured_managed(home)
     config = read_json(home / "connection.json")
     key = config.get("id")
     if not key:
@@ -367,7 +326,7 @@ def connector_status(home):
 
 
 def wait_dashboard(home):
-    require_secure_managed(home)
+    installation.require_configured_managed(home)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         try:
@@ -391,7 +350,7 @@ def _local_connection_targets(home, api):
     if current is None:
         return None
     urls = {
-        f"https://connector-relay:9495/mcp/{key}/{identifier(profile)}"
+        f"http://connector-relay:9495/mcp/{key}/{identifier(profile)}"
         for profile in approved
         if profile in current["profiles"]
     }
@@ -418,7 +377,7 @@ def _local_connection_targets(home, api):
 
 def keep_connections(home):
     """Send protocol pings through OpenMaskit; never run tools or reset sessions."""
-    require_secure_managed(home)
+    installation.require_configured_managed(home)
     with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
         candidates = _local_connection_targets(home, api)
     if candidates is None:
@@ -456,7 +415,7 @@ def keep_connections(home):
 
 def refresh_connections(home):
     """Restore saved sessions after a connector restart, without replaying calls."""
-    require_secure_managed(home)
+    installation.require_configured_managed(home)
     with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
         candidates = _local_connection_targets(home, api)
         if candidates is None:
@@ -492,7 +451,7 @@ def register_target(home: Path, profile: str, name: str):
         for row in online
     ):
         raise ValueError("Start the paired connector with this approved profile first")
-    url = f"https://connector-relay:9495/mcp/{key}/{profile}"
+    url = f"http://connector-relay:9495/mcp/{key}/{profile}"
     target_id = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:64]
     if not target_id:
         raise ValueError("Choose a name containing letters or numbers")
