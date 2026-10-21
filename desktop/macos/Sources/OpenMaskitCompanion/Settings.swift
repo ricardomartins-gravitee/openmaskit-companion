@@ -13,20 +13,22 @@ private struct SettingsHeight: PreferenceKey {
 struct SettingsScreen: View {
   @ObservedObject var model: CompanionModel
   @ObservedObject var preferences: AppPreferences
-  @Environment(\.openWindow) private var openWindow
-  @State private var section = "installation"
   @State private var contentHeight: CGFloat = 400
 
   var body: some View {
     VStack(spacing: CompanionTokens.spaceMd) {
-      Picker("Settings section", selection: $section) {
+      Picker("Settings section", selection: $model.settingsSection) {
         Text("Installation").tag("installation")
-        Text("Appearance").tag("appearance")
+        Text("Local MCPs").tag("mcps")
+        Text("General").tag("general")
       }.pickerStyle(.segmented)
       ScrollView {
         VStack(spacing: CompanionTokens.spaceMd) {
-          if section == "installation" {
+          if model.settingsSection == "installation" {
             installationSettings
+            InstallationFeedback(model: model)
+          } else if model.settingsSection == "mcps" {
+            LocalMCPSettings(model: model)
             InstallationFeedback(model: model)
           } else {
             appearanceSettings
@@ -50,7 +52,6 @@ struct SettingsScreen: View {
     .tint(CompanionTheme.accent).padding(CompanionTokens.spaceLg)
     .frame(width: 620).fixedSize(horizontal: false, vertical: true)
     .background(CompanionTheme.root).preferredColorScheme(.dark)
-    .onAppear { preferences.openMainWindow = { openWindow(id: "main") } }
   }
 
   @ViewBuilder private var installationSettings: some View {
@@ -90,15 +91,15 @@ struct SettingsScreen: View {
           }
         }
         HStack {
-          Button("Start Services") {
-            Task { await model.action(["start"], success: "Services started.") }
+          Button("Start All") {
+            Task { await model.startAll() }
           }
           .buttonStyle(CompanionButtonStyle(kind: .primary))
-          .disabled(model.installation.ready || model.busy)
-          Button("Stop Services") {
-            Task {
-              await model.action(["stop"], success: "Services stopped. Your settings are saved.")
-            }
+          .disabled(
+            !model.installation.configured || model.busy
+              || model.runtimeIsReady)
+          Button("Stop All") {
+            Task { await model.stopAll() }
           }
           .buttonStyle(CompanionButtonStyle(kind: .danger))
           .disabled(
@@ -121,7 +122,7 @@ struct SettingsScreen: View {
           .buttonStyle(CompanionButtonStyle()).disabled(
             model.busy || !model.installation.canUseLocalConnector)
           Button(model.connectorRunning ? "Stop Connector" : "Start Connector") {
-            model.toggleConnector()
+            Task { await model.toggleConnector() }
           }
           .buttonStyle(CompanionButtonStyle())
           .disabled(
@@ -148,7 +149,14 @@ struct SettingsScreen: View {
         .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
       }
       CompanionPanel("Startup & updates") {
-        Text("Start the app manually. Updates are manual in this development build.")
+        Toggle(
+          "Start services and local MCPs when Companion opens",
+          isOn: $preferences.automaticallyStartServices)
+        Text(
+          "Opens Docker Desktop if needed and starts your configured installation and approved local MCPs. A manual stop lasts until the next launch."
+        )
+        .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
+        Text("Login startup is off. Installation and updates remain manual.")
           .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
       }
     }
@@ -158,65 +166,51 @@ struct SettingsScreen: View {
 struct CompanionMenu: View {
   @ObservedObject var model: CompanionModel
   @ObservedObject var preferences: AppPreferences
-  @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    Button("Show OpenMaskit Companion") {
-      preferences.revealMainWindow()
-    }
-    Button("Open OpenMaskit Dashboard") {
-      Task { await model.openDashboard() }
-    }.disabled(!model.installation.canOpenDashboard || model.busy)
-    Divider()
     Text(
-      model.installation.connectors?.contains(where: { $0.connected }) == true
-        ? "Local connector connected" : "Local connector offline")
-    Button(model.connectorRunning ? "Stop Local Connector" : "Start Local Connector") {
-      model.toggleConnector()
-    }.disabled(!model.installation.canUseLocalConnector || !model.installation.paired || model.busy)
-    Divider()
-    SettingsLink { Text("Settings…") }.keyboardShortcut(",")
-    Button("Quit OpenMaskit Companion") { NSApp.terminate(nil) }.keyboardShortcut("q")
-      .onAppear { preferences.openMainWindow = { openWindow(id: "main") } }
-  }
-}
-
-struct MainWindowObserver: NSViewRepresentable {
-  let preferences: AppPreferences
-  @Environment(\.openWindow) private var openWindow
-
-  func makeCoordinator() -> Coordinator { Coordinator(preferences) }
-  func makeNSView(context: Context) -> NSView { NSView() }
-  func updateNSView(_ view: NSView, context: Context) {
-    let action = openWindow
-    DispatchQueue.main.async {
-      preferences.openMainWindow = { action(id: "main") }
-      context.coordinator.observe(view.window)
-    }
-  }
-
-  @MainActor final class Coordinator {
-    let preferences: AppPreferences
-    private var token: NSObjectProtocol?
-    private weak var window: NSWindow?
-    init(_ preferences: AppPreferences) { self.preferences = preferences }
-
-    func observe(_ window: NSWindow?) {
-      guard let window, self.window !== window else { return }
-      if let token { NotificationCenter.default.removeObserver(token) }
-      self.window = window
-      window.titlebarAppearsTransparent = true
-      window.backgroundColor = NSColor(CompanionTheme.root)
-      token = NotificationCenter.default.addObserver(
-        forName: NSWindow.willCloseNotification,
-        object: window, queue: .main
-      ) { [weak preferences] _ in
-        MainActor.assumeIsolated { preferences?.windowClosed() }
+      model.busy
+        ? (model.progress.isEmpty ? "Working…" : model.progress)
+        : "OpenMaskit · " + model.installation.title)
+    if model.installation.configured {
+      ForEach(model.installation.services) { service in
+        Text(service.title + " · " + (service.health.isEmpty ? service.state : service.health))
       }
+      if model.installation.mode == .managed {
+        Text(model.connectorIsOnline ? "Local MCPs · Connected" : "Local MCPs · Offline")
+      }
+    } else {
+      Text("Setup is required")
+      Button("Set Up OpenMaskit…") { preferences.revealMainWindow() }
     }
-
-    deinit {
-      if let token { NotificationCenter.default.removeObserver(token) }
+    if !model.message.isEmpty { Text(model.message) }
+    Divider()
+    Button("Open OpenMaskit Dashboard") { Task { await model.openDashboard() } }
+      .disabled(!model.installation.canOpenDashboard || model.busy)
+    if model.installation.canManageServices && model.installation.configured {
+      Button("Start All") { Task { await model.startAll() } }
+        .disabled(model.busy || model.runtimeIsReady)
+      Button("Stop All") { Task { await model.stopAll() } }
+        .disabled(
+          model.busy
+            || (!model.connectorRunning
+              && !model.installation.services.contains(where: { $0.state == "running" }))
+        )
+      Button(model.connectorRunning ? "Stop Local Connector" : "Start Local Connector") {
+        Task { await model.toggleConnector() }
+      }.disabled(
+        model.busy
+          || (!model.connectorRunning
+            && (!model.installation.canUseLocalConnector || !model.installation.paired))
+      )
     }
+    Button("Refresh Status") { Task { await model.refresh() } }.disabled(model.busy)
+    Divider()
+    Button("Local MCP Settings…") {
+      model.settingsSection = "mcps"
+      model.showSettings?()
+    }
+    Button("Settings…") { model.showSettings?() }.keyboardShortcut(",")
+    Button("Quit OpenMaskit Companion") { NSApp.terminate(nil) }.keyboardShortcut("q")
   }
 }

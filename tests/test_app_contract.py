@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
+import pytest
 import uvicorn
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -18,6 +19,28 @@ from openmaskit_connector.relay import create_app
 from openmaskit_connector.state import read_json, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "docker-status",
+        "start-dependencies",
+        "start-installed",
+        "wait-services",
+        "connector-status",
+        "refresh-connections",
+    ],
+)
+def test_packaged_startup_helpers_never_initialize_a_fresh_installation(
+    tmp_path, action
+):
+    result = subprocess.run(
+        command(tmp_path, action), text=True, capture_output=True, timeout=30
+    )
+    assert result.returncode == 1
+    assert json.loads(result.stderr)["code"] == "not_configured"
+    assert not list(tmp_path.iterdir())
 
 
 def command(home, *args):

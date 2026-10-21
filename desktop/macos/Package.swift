@@ -20,6 +20,7 @@ let package = Package(
         .product(name: "OpenMaskitDesign", package: "openmaskit-design-system"),
       ]),
     .testTarget(name: "CompanionPolicyTests", dependencies: ["CompanionPolicy"]),
-    .testTarget(name: "CompanionDesktopCoreTests", dependencies: ["CompanionDesktopCore"]),
+    .testTarget(
+      name: "CompanionDesktopCoreTests", dependencies: ["CompanionDesktopCore", "CompanionPolicy"]),
   ]
 )

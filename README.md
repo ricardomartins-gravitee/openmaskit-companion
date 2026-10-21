@@ -14,9 +14,23 @@ updates are not enabled.
 The app's **Settings** screen has independent options for showing a menu bar
 icon and keeping the app running in the menu bar when its main window closes.
 The menu bar icon is visible by default; closing to the menu bar is off initially.
-Explicit choices are saved independently. Monitoring continues while the window is
-hidden. Quitting stops the local connector; managed containers keep their
+Explicit choices are saved independently. Companion is a **menu bar app**: a
+configured launch opens no main window. Status, Open Dashboard, Start All and
+Stop All are in the menu. Onboarding and Settings are its only windows. Local
+MCP approval and registration are under **Settings → Local MCPs**.
+Only one Companion process runs per account, including copies opened from
+different folders. Opening it again brings the existing Settings window forward;
+each window belongs to the same app and Dock icon.
+Quitting stops the local connector; managed containers keep their
 normal state until explicitly stopped.
+
+For a configured Companion installation, opening the app automatically starts
+its installed services and previously approved connector. Docker Desktop is
+opened if necessary, with a bounded wait for readiness. Disable this behavior
+under **Settings → General → Start services and local MCPs when Companion opens**.
+Manual stops are respected until the next app launch. Fresh onboarding and
+externally managed installations never trigger automatic startup. No login item
+or automatic installation/update is enabled; automatic startup never pulls images.
 
 ## Components
 
@@ -69,8 +83,8 @@ reachable again. Connecting or finishing setup never opens a browser automatical
 
 Use **Settings → Installation** to change the address or installation, manage
 Companion-owned services, or configure pairing and the local connector.
-The main screen shows connection status and MCPs; setup is shown there only
-when no installation has completed configuration. Changing installations stops
+The menu shows connection and service status; onboarding is shown only when no
+installation has completed configuration. Changing installations stops
 the app's local connector, keeps approved profiles and installation data, and
 leaves existing services running. Companion's local connector controls are
 currently available only for its managed installation.

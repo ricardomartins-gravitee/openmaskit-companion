@@ -11,7 +11,18 @@ struct LocalProfile: Codable, Identifiable {
 }
 
 @MainActor final class CompanionModel: ObservableObject {
-  @Published var installation = Installation()
+  @Published var installation = Installation() {
+    didSet { if hasLoaded { configurationChanged?() } }
+  }
+  var didLoad: (() -> Void)?
+  var configurationChanged: (() -> Void)?
+  var showSettings: (() -> Void)?
+  @Published var settingsSection = "installation"
+  var connectorIsOnline: Bool { connectorRunning && connectorWasOnline }
+  var runtimeIsReady: Bool {
+    installation.servicesAreHealthy
+      && (!installation.paired || profiles.isEmpty || connectorIsOnline)
+  }
   @Published var profiles: [LocalProfile] = []
   @Published var busy = false
   @Published var hasLoaded = false
@@ -21,13 +32,19 @@ struct LocalProfile: Codable, Identifiable {
   @Published var message = ""
   @Published var connectorRunning = false
   private var connector: Process?
+  private var retiringConnector: Process?
+  private var connectorWasOnline = false
+  private let startup = ServiceStartup()
   private var monitor: Task<Void, Never>?
 
-  func startMonitoring() {
+  func startMonitoring(preferences: AppPreferences) {
     guard monitor == nil else { return }
     monitor = Task { [weak self] in
       while !Task.isCancelled {
         await self?.refresh()
+        if let self, self.hasLoaded && !self.startup.launchAttempted {
+          await self.startAll(automatically: true, enabled: preferences.automaticallyStartServices)
+        }
         try? await Task.sleep(for: .seconds(5))
       }
     }
@@ -59,38 +76,32 @@ struct LocalProfile: Codable, Identifiable {
   func invoke(_ arguments: [String], input: Data? = nil) async throws -> Data {
     let executable = backend
     let allArguments = baseArguments + arguments
-    return try await Task.detached {
-      let process = Process()
-      let output = Pipe()
-      let errors = Pipe()
-      let incoming = Pipe()
-      process.executableURL = executable
-      process.arguments = allArguments
-      process.standardOutput = output
-      process.standardError = errors
-      process.standardInput = incoming
-      try process.run()
-      if let input { incoming.fileHandleForWriting.write(input) }
-      try? incoming.fileHandleForWriting.close()
-      process.waitUntilExit()
-      guard process.terminationStatus == 0 else {
-        let failure =
-          try? JSONSerialization.jsonObject(
-            with: errors.fileHandleForReading.readDataToEndOfFile()) as? [String: String]
-        let safeCodes = [
-          "invalid_url", "unavailable", "not_openmaskit", "database_unavailable",
-          "invalid_selection", "external_installation", "not_configured", "docker_unavailable",
-        ]
-        let detail = failure.flatMap { safeCodes.contains($0["code"] ?? "") ? $0["error"] : nil }
-        throw NSError(
-          domain: "Companion", code: 1,
-          userInfo: [
-            NSLocalizedDescriptionKey: detail
-              ?? "The action could not finish. Check Docker Desktop, pairing and your local MCP settings."
-          ])
-      }
-      return output.fileHandleForReading.readDataToEndOfFile()
-    }.value
+    let longActions = ["start", "prepare-managed"]
+    let runtimeActions = [
+      "start-dependencies", "start-installed", "wait-services", "refresh-connections", "register",
+    ]
+    let timeout: TimeInterval =
+      longActions.contains(arguments.first ?? "")
+      ? 420
+      : (runtimeActions.contains(arguments.first ?? "") ? 200 : 45)
+    let result = try await BackendProcess.run(
+      executable: executable, arguments: allArguments, input: input, timeout: timeout)
+    guard result.status == 0 else {
+      let failure = try? JSONSerialization.jsonObject(with: result.errors) as? [String: String]
+      let safeCodes = [
+        "invalid_url", "unavailable", "not_openmaskit", "database_unavailable",
+        "invalid_selection", "external_installation", "not_configured", "docker_unavailable",
+      ]
+      let detail = failure.flatMap { safeCodes.contains($0["code"] ?? "") ? $0["error"] : nil }
+      throw NSError(
+        domain: "Companion", code: 1,
+        userInfo: [
+          NSLocalizedDescriptionKey:
+            detail
+            ?? "The action could not finish. Check Docker Desktop, pairing and your local MCP settings."
+        ])
+    }
+    return result.output
   }
 
   func refresh() async {
@@ -100,18 +111,111 @@ struct LocalProfile: Codable, Identifiable {
     let generation = configurationGeneration
     do {
       let state = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
-      let data = try await invoke(["profiles"])
       struct ProfileList: Codable { let profiles: [LocalProfile] }
-      let list = try JSONDecoder().decode(ProfileList.self, from: data)
+      let list =
+        state.mode == .managed
+        ? try JSONDecoder().decode(ProfileList.self, from: await invoke(["profiles"]))
+        : ProfileList(profiles: [])
       guard generation == configurationGeneration && !busy else { return }
       installation = state
       profiles = list.profiles
+      let firstLoad = !hasLoaded
       hasLoaded = true
+      if firstLoad { didLoad?() }
+      if connectorRunning {
+        let online = (try? await connectorOnline()) ?? false
+        if online && !connectorWasOnline {
+          busy = true
+          defer { busy = false }
+          try await restoreConnections()
+        }
+        connectorWasOnline = online
+      }
     } catch {
       guard generation == configurationGeneration && !busy else { return }
       installation.ready = false
       message = error.localizedDescription
     }
+  }
+
+  private func connectorOnline() async throws -> Bool {
+    struct Status: Decodable { let connected: Bool }
+    return try JSONDecoder().decode(Status.self, from: await invoke(["connector-status"])).connected
+  }
+
+  private func restoreConnections(waitReady: Bool = false) async throws {
+    struct Status: Decodable { let connected: Bool }
+    let args = ["refresh-connections"] + (waitReady ? ["--wait-ready"] : [])
+    let result = try JSONDecoder().decode(Status.self, from: await invoke(args))
+    guard result.connected else { throw StartupFailure.connectorUnavailable }
+  }
+
+  private var startupActions: StartupActions {
+    StartupActions(
+      dockerReady: {
+        struct Status: Decodable { let ready: Bool }
+        return try JSONDecoder().decode(Status.self, from: await self.invoke(["docker-status"]))
+          .ready
+      },
+      openDocker: {
+        guard
+          let application = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.docker.docker")
+        else { throw StartupFailure.dockerUnavailable }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = false
+        try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<Void, Error>) in
+          NSWorkspace.shared.openApplication(at: application, configuration: config) { _, error in
+            if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+          }
+        }
+      },
+      startDependencies: { _ = try await self.invoke(["start-dependencies"]) },
+      startConnector: { try await self.startConnectorProcess() },
+      connectorReady: { try await self.connectorOnline() },
+      startOpenMaskit: { _ = try await self.invoke(["start-installed"]) },
+      refreshConnections: { try await self.restoreConnections(waitReady: true) },
+      waitForServices: {
+        try JSONDecoder().decode(Installation.self, from: await self.invoke(["wait-services"]))
+      },
+      progress: { self.progress = $0 })
+  }
+
+  func startAll(automatically: Bool = false, enabled: Bool = true) async {
+    guard !busy else { return }
+    if !automatically && (!installation.configured || installation.mode != .managed) { return }
+    busy = true
+    configurationGeneration += 1
+    message = ""
+    defer {
+      busy = false
+      progress = ""
+    }
+    do {
+      let result: Installation?
+      if automatically {
+        result = try await startup.onLaunch(
+          state: installation, enabled: enabled, approvedProfiles: profiles.count,
+          actions: startupActions)
+      } else {
+        result = try await ServiceStartup.start(
+          state: installation, approvedProfiles: profiles.count, actions: startupActions)
+      }
+      if let result {
+        installation = result
+        let online = (try? await connectorOnline()) ?? false
+        connectorWasOnline = connectorRunning && online
+        message =
+          connectorWasOnline ? "Services and the connector are ready." : "Services are ready."
+      }
+    } catch { message = error.localizedDescription }
+  }
+
+  func stopAll() async {
+    guard !busy else { return }
+    stopConnector()
+    await action(["stop"], success: "Services stopped. Your rules and settings are saved.")
   }
 
   func connectExisting(_ address: String) async {
@@ -224,31 +328,72 @@ struct LocalProfile: Codable, Identifiable {
     } catch { message = error.localizedDescription }
   }
 
-  func toggleConnector() {
+  func toggleConnector() async {
+    guard !busy else { return }
     if connectorRunning {
       stopConnector()
+      message = "Local connector stopped. It stays stopped until you start it or reopen Companion."
       return
+    }
+    guard installation.canUseLocalConnector && installation.paired else { return }
+    busy = true
+    progress = "Connecting local MCPs…"
+    defer {
+      busy = false
+      progress = ""
+    }
+    do {
+      try await startConnectorProcess()
+      var ready = false
+      for _ in 0..<15 {
+        if try await connectorOnline() {
+          ready = true
+          break
+        }
+        try await Task.sleep(for: .seconds(2))
+      }
+      guard ready else { throw StartupFailure.connectorUnavailable }
+      try await restoreConnections()
+      connectorWasOnline = true
+      message = "Local MCPs are connected."
+    } catch { message = error.localizedDescription }
+  }
+
+  private func startConnectorProcess() async throws {
+    if connectorRunning { return }
+    if let old = retiringConnector {
+      for _ in 0..<50 {
+        if !old.isRunning { break }
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      guard !old.isRunning else { throw StartupFailure.connectorUnavailable }
+      retiringConnector = nil
     }
     let process = Process()
     process.executableURL = backend
     process.arguments = baseArguments + ["connect"]
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
-    process.terminationHandler = { [weak self] _ in
-      Task { @MainActor in self?.connectorRunning = false }
+    process.terminationHandler = { [weak self] terminated in
+      Task { @MainActor in
+        guard let self, self.connector === terminated else { return }
+        self.connector = nil
+        self.connectorRunning = false
+        self.connectorWasOnline = false
+      }
     }
-    do {
-      try process.run()
-      connector = process
-      connectorRunning = true
-      message = "Connector started. Connection status appears below."
-    } catch { message = "The local connector could not start." }
+    try process.run()
+    connector = process
+    connectorRunning = true
+    connectorWasOnline = false
   }
 
   func stopConnector() {
     connector?.terminate()
+    retiringConnector = connector
     connector = nil
     connectorRunning = false
+    connectorWasOnline = false
   }
 
   func approve() {
@@ -285,46 +430,94 @@ struct LocalProfile: Codable, Identifiable {
   }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-  var model: CompanionModel?
-  var preferences: AppPreferences?
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+  let model = CompanionRuntime.model
+  let preferences = CompanionRuntime.preferences
+  private var onboarding: CompanionWindow?
+  private var settings: CompanionWindow?
+
   func applicationDidFinishLaunching(_ notification: Notification) {
+    DistributedNotificationCenter.default().addObserver(
+      self, selector: #selector(reopenRunningApp(_:)),
+      name: CompanionInstance.reopenNotification,
+      object: String(ProcessInfo.processInfo.processIdentifier))
     NSApp.appearance = NSAppearance(named: .darkAqua)
     if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
       let image = NSImage(contentsOf: url)
     {
       NSApp.applicationIconImage = image
     }
+    preferences.openMainWindow = { [weak self] in self?.reopen() }
+    model.showSettings = { [weak self] in self?.showSettings() }
+    model.didLoad = { [weak self] in
+      guard let self else { return }
+      if self.model.installation.configured {
+        self.preferences.enterMenuBar()
+      } else {
+        self.showOnboarding()
+      }
+    }
+    model.configurationChanged = { [weak self] in
+      guard let self, self.model.installation.configured,
+        self.onboarding?.window?.isVisible == true
+      else { return }
+      self.onboarding?.close()
+      self.preferences.enterMenuBar()
+    }
+    model.startMonitoring(preferences: preferences)
   }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
-    if !flag || preferences?.mainWindowClosed == true {
-      preferences?.revealMainWindow()
-    }
+    preferences.revealMainWindow()
     return false
   }
   func applicationWillTerminate(_ notification: Notification) {
-    MainActor.assumeIsolated { model?.stopConnector() }
+    DistributedNotificationCenter.default().removeObserver(self)
+    MainActor.assumeIsolated { model.stopConnector() }
+  }
+
+  @objc private func reopenRunningApp(_ notification: Notification) {
+    preferences.revealMainWindow()
+  }
+
+  private func reopen() {
+    if model.hasLoaded && model.installation.needsOnboarding {
+      showOnboarding()
+    } else {
+      showSettings()
+    }
+  }
+
+  private func showOnboarding() {
+    if onboarding == nil {
+      onboarding = CompanionWindow(
+        title: "Set Up OpenMaskit Companion",
+        content: AnyView(CompanionOnboarding(model: model, preferences: preferences)),
+        preferences: preferences)
+    }
+    onboarding?.present()
+  }
+
+  private func showSettings() {
+    if settings == nil {
+      settings = CompanionWindow(
+        title: "OpenMaskit Companion Settings",
+        content: AnyView(SettingsScreen(model: model, preferences: preferences)),
+        preferences: preferences)
+    }
+    settings?.present()
   }
 }
 
 @main struct CompanionApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-  @StateObject var model = CompanionModel()
-  @StateObject var preferences = AppPreferences()
+  @StateObject var model = CompanionRuntime.model
+  @StateObject var preferences = CompanionRuntime.preferences
+
+  init() { CompanionInstance.enforce() }
 
   var body: some Scene {
-    Window("OpenMaskit Companion", id: "main") {
-      CompanionOverview(model: model, preferences: preferences)
-        .onAppear {
-          delegate.model = model
-          delegate.preferences = preferences
-          model.startMonitoring()
-        }
-    }
-    .windowResizability(.contentSize)
-    Settings { SettingsScreen(model: model, preferences: preferences) }
     MenuBarExtra(
       "OpenMaskit Companion", systemImage: "link",
       isInserted: Binding(
@@ -334,5 +527,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
       CompanionMenu(model: model, preferences: preferences)
     }.menuBarExtraStyle(.menu)
+      .commands {
+        CommandGroup(replacing: .appSettings) {
+          Button("Settings…") { model.showSettings?() }.keyboardShortcut(",")
+        }
+      }
   }
 }

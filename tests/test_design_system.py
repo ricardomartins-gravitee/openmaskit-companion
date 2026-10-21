@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import plistlib
 import re
 from pathlib import Path
 
@@ -52,11 +53,37 @@ def test_production_views_use_shared_native_components_and_semantic_values():
 def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     app = (MAC / "Sources/OpenMaskitCompanion/App.swift").read_text()
     settings = (MAC / "Sources/OpenMaskitCompanion/Settings.swift").read_text()
+    windows = (MAC / "Sources/OpenMaskitCompanion/Windows.swift").read_text()
     assert "MenuBarExtra" in app
     assert "AppPreferences" in app
-    assert "NSWindow.willCloseNotification" in settings
-    assert "preferences?.windowClosed()" in settings
+    assert "NSWindowDelegate" in windows
+    assert "preferences.windowClosed()" in windows
     assert 'keyboardShortcut("q")' in settings
+    assert 'Window("OpenMaskit Companion"' not in app
+    assert "model.startMonitoring(preferences: preferences)" in app
+    assert 'Button("Start All")' in settings and 'Button("Stop All")' in settings
+    assert "init() { CompanionInstance.enforce() }" in app
+    assert "reopenRunningApp" in app
+    assert "private var settings: CompanionWindow?" in app
+    assert "private var onboarding: CompanionWindow?" in app
+
+
+def test_app_identity_stays_single_instance_and_menu_first(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "identity_bundle", ROOT / "scripts/bundle.py"
+    )
+    bundle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bundle)
+    bundle.write_info_plist(tmp_path)
+    with (tmp_path / "Info.plist").open("rb") as stream:
+        info = plistlib.load(stream)
+    assert info["CFBundleName"] == "OpenMaskit Companion"
+    assert (
+        info["CFBundleIdentifier"]
+        == "io.github.ricardomartins-gravitee.openmaskit-companion"
+    )
+    assert info["LSMultipleInstancesProhibited"] is True
+    assert info["LSUIElement"] is True
 
 
 def test_app_bundle_preserves_shared_library_attribution(tmp_path, monkeypatch):

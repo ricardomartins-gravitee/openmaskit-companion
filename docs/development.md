@@ -50,6 +50,18 @@ and verifies that the settings and original managed connection are preserved.
 Native policy tests cover onboarding and dashboard readiness independently of
 XCTest; hosted XCTest runs the same installation state contract.
 
+Menu-first acceptance checks the once-per-launch startup gate, opt-out, external
+and unconfigured guards, bounded Docker/connector waits, startup ordering,
+manual-stop preservation and concurrent/bounded helper output. XCTest also covers
+these cases. Cross-process acceptance verifies that only one app can own the
+desktop lock, including recovery after a normal exit or crash, and rejects
+unprotected/symlinked lock paths. The real Docker manager acceptance stops and restarts a synthetic
+host connector, restores its saved proxy sessions and repeats an MCP round trip
+while comparing the saved rules and analyzer settings. `--isolated-ports` runs
+this fixture beside an installed Companion using only ephemeral ports and its
+own generated Compose project. Its explicit pairing endpoint stays inside that
+fixture. No real mailbox tools are invoked.
+
 To keep a review build separate from an installed app, use
 `scripts/bundle.py --output-dir .runtime/review-dist` (with the verified relay
 image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and

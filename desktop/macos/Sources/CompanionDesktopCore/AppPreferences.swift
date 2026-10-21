@@ -10,6 +10,13 @@ import CompanionPolicy
   private let defaults: UserDefaults
   private let setActivationPolicy: @MainActor (NSApplication.ActivationPolicy) -> Void
   private let activate: @MainActor () -> Void
+  @Published public var automaticallyStartServices: Bool {
+    didSet {
+      if automaticallyStartServices != oldValue {
+        defaults.set(automaticallyStartServices, forKey: "automaticallyStartServices")
+      }
+    }
+  }
 
   public init(
     defaults: UserDefaults = .standard,
@@ -20,10 +27,11 @@ import CompanionPolicy
       NSApplication.shared.activate(ignoringOtherApps: true)
     }
   ) {
-    defaults.register(defaults: ["showInMenuBar": true])
+    defaults.register(defaults: ["showInMenuBar": true, "automaticallyStartServices": true])
     self.defaults = defaults
     self.setActivationPolicy = setActivationPolicy
     self.activate = activate
+    automaticallyStartServices = defaults.bool(forKey: "automaticallyStartServices")
     state = MenuBarState(
       showInMenuBar: defaults.bool(forKey: "showInMenuBar"),
       closeToMenuBar: defaults.bool(forKey: "closeToMenuBar"))
@@ -42,6 +50,26 @@ import CompanionPolicy
 
   public func windowClosed() { dispatch(.mainWindowWillClose) }
   public func revealMainWindow() { dispatch(.reopenRequested) }
+
+  /// A configured launch is menu-only when there is a reachable menu item.
+  public func enterMenuBar() {
+    if showInMenuBar || closeToMenuBar {
+      dispatch(.mainWindowWillClose)
+      setActivationPolicy(.accessory)
+    } else {
+      revealMainWindow()
+    }
+  }
+
+  public func windowPresented() {
+    if state.mainWindowClosed {
+      var next = state
+      next.mainWindowClosed = false
+      state = next
+    }
+    setActivationPolicy(.regular)
+    activate()
+  }
 
   /// Framework insertion notifications are observations, not user preferences.
   /// In particular, close-only visibility must never enable always-show.
@@ -67,6 +95,11 @@ import CompanionPolicy
         openMainWindow?()
         activate()
       }
+    }
+    if previous.showInMenuBar && !next.showInMenuBar && next.mainWindowClosed
+      && !next.closeToMenuBar
+    {
+      revealMainWindow()
     }
   }
 }

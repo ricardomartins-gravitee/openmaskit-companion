@@ -28,3 +28,37 @@ subprocess.run(
     check=True,
 )
 subprocess.run([str(output)], check=True)
+
+startup = root / ".runtime/startup-core-check"
+subprocess.run(
+    [
+        "swiftc",
+        "-parse-as-library",
+        "-I",
+        str(binary_path / "Modules"),
+        str(package / "Acceptance/StartupAcceptance.swift"),
+        str(binary_path / "CompanionDesktopCore.build/ServiceStartup.swift.o"),
+        str(binary_path / "CompanionDesktopCore.build/BackendProcess.swift.o"),
+        str(binary_path / "CompanionPolicy.build/InstallationState.swift.o"),
+        "-o",
+        str(startup),
+    ],
+    check=True,
+)
+subprocess.run([str(startup)], check=True)
+
+instance = root / ".runtime/instance-core-check"
+subprocess.run(
+    [
+        "swiftc",
+        "-parse-as-library",
+        "-I",
+        str(binary_path / "Modules"),
+        str(package / "Acceptance/InstanceAcceptance.swift"),
+        str(binary_path / "CompanionDesktopCore.build/DesktopInstanceLock.swift.o"),
+        "-o",
+        str(instance),
+    ],
+    check=True,
+)
+subprocess.run([str(instance)], check=True, timeout=30)

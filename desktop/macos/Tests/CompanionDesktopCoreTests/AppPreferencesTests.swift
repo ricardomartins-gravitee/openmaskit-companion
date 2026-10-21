@@ -27,6 +27,33 @@ import XCTest
     XCTAssertFalse(relaunched.menuBarVisible)
   }
 
+  func testAutomaticStartupPreferenceDefaultsOnAndPersistsOptOut() async {
+    let defaults = privateDefaults()
+    let preferences = AppPreferences(
+      defaults: defaults, setActivationPolicy: { _ in }, activate: {})
+    XCTAssertTrue(preferences.automaticallyStartServices)
+    preferences.automaticallyStartServices = false
+    XCTAssertFalse(
+      AppPreferences(defaults: defaults, setActivationPolicy: { _ in }, activate: {})
+        .automaticallyStartServices)
+  }
+
+  func testMenuFirstLaunchHasNoDockAndOptOutCannotStrandTheApp() async {
+    var policies: [NSApplication.ActivationPolicy] = []
+    var opened = 0
+    let preferences = AppPreferences(
+      defaults: privateDefaults(showInMenuBar: true),
+      setActivationPolicy: { policies.append($0) }, activate: {})
+    preferences.openMainWindow = { opened += 1 }
+    preferences.enterMenuBar()
+    XCTAssertTrue(preferences.menuBarVisible)
+    XCTAssertEqual(policies.last, .accessory)
+    XCTAssertEqual(opened, 0)
+    preferences.showInMenuBar = false
+    XCTAssertEqual(policies.last, .regular)
+    XCTAssertEqual(opened, 1)
+  }
+
   func testCloseCallsAppKitAdapterAndReopenRestoresDockAndWindow() async {
     var policies: [NSApplication.ActivationPolicy] = []
     var opened = 0

@@ -10,6 +10,9 @@ import CompanionDesktopCore
         let firstLaunch = AppPreferences(defaults: defaults,
             setActivationPolicy: { _ in }, activate: {})
         precondition(firstLaunch.showInMenuBar && firstLaunch.menuBarVisible && !firstLaunch.closeToMenuBar)
+        precondition(firstLaunch.automaticallyStartServices)
+        firstLaunch.automaticallyStartServices = false
+        precondition(!AppPreferences(defaults: defaults, setActivationPolicy: { _ in }, activate: {}).automaticallyStartServices)
         firstLaunch.showInMenuBar = false
         var policies: [NSApplication.ActivationPolicy] = []
         var opened = 0, activated = 0, changes = 0

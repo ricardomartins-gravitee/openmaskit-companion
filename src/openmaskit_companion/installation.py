@@ -118,6 +118,13 @@ def require_managed(home):
         raise InstallationError("external_installation")
 
 
+def require_configured_managed(home):
+    require_managed(home)
+    selected = selection(home)
+    if selected["mode"] != "managed" or not selected["configured"]:
+        raise InstallationError("not_configured")
+
+
 def probe(value):
     url = local_url(value)
     try:

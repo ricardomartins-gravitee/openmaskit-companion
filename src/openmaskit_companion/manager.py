@@ -10,6 +10,7 @@ import shutil
 
 # Docker lifecycle management requires fixed-argument subprocess calls.
 import subprocess  # nosec B404
+import time
 from importlib.resources import files
 from pathlib import Path
 
@@ -294,6 +295,104 @@ def admin(home: Path, method, path, body=None):
         response = api.request(method, path, json=body)
         response.raise_for_status()
         return response.json()
+
+
+def docker_ready(home):
+    installation.require_configured_managed(home)
+    binary = docker_binary()
+    local_docker(binary, os.environ)
+    try:
+        # Read-only daemon probe, after rejecting remote Docker contexts.
+        result = subprocess.run(  # nosec B603
+            [binary, "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return {"ready": result.returncode == 0}
+    except (OSError, subprocess.TimeoutExpired):
+        return {"ready": False}
+
+
+def connector_status(home):
+    installation.require_configured_managed(home)
+    config = read_json(home / "connection.json")
+    key = config.get("id")
+    if not key:
+        return {"connected": False}
+    rows = admin(home, "GET", "/admin/connectors")["connectors"]
+    return {"connected": any(row["id"] == key and row["connected"] for row in rows)}
+
+
+def wait_dashboard(home):
+    installation.require_configured_managed(home)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            installation.probe(WEB)
+            return
+        except installation.InstallationError:
+            time.sleep(0.25)
+    raise installation.InstallationError("unavailable")
+
+
+def refresh_connections(home):
+    """Reinitialize only active targets for this paired, approved connector.
+
+    Existing proxy sessions cannot survive a connector restart. Recreating those
+    sessions never edits their config, masking rules, credentials or aliases and
+    never retries an interrupted tool call.
+    """
+    installation.require_configured_managed(home)
+    from openmaskit_connector.connector import profiles
+    from openmaskit_connector.state import identifier
+
+    paired = read_json(home / "connection.json")
+    key = identifier(paired["id"])
+    approved = profiles(home)
+    rows = admin(home, "GET", "/admin/connectors")["connectors"]
+    current = next((row for row in rows if row["id"] == key and row["connected"]), None)
+    if current is None:
+        return {"connected": False, "refreshed": 0}
+    urls = {
+        f"http://connector-relay:9495/mcp/{key}/{identifier(profile)}"
+        for profile in approved
+        if profile in current["profiles"]
+    }
+    with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
+        response = api.get("/api/targets")
+        response.raise_for_status()
+        candidates = []
+        for row in response.json()["targets"]:
+            config = row.get("config") or {}
+            if (
+                row.get("source") == "custom"
+                and config.get("transport") == "http"
+                and config.get("url") in urls
+            ):
+                target = identifier(row["name"])
+                saved = api.get(f"/api/targets/custom/{target}")
+                saved.raise_for_status()
+                data = saved.json()
+                if data["active"] and data["config"].get("url") in urls:
+                    candidates.append(target)
+        if len(candidates) > 32:
+            raise ValueError("Too many local MCP connections to refresh at once")
+        if candidates:
+            response = api.get("/api/csrf")
+            response.raise_for_status()
+            headers = {"Origin": WEB, "X-CSRF-Token": response.json()["token"]}
+            for target in candidates:
+                api.post(
+                    f"/api/targets/custom/{target}/deactivate", headers=headers
+                ).raise_for_status()
+                connected = api.post(
+                    f"/api/targets/custom/{target}/activate", headers=headers
+                )
+                connected.raise_for_status()
+                if not connected.json()["connected"]:
+                    raise ValueError("A saved local MCP could not reconnect")
+    return {"connected": True, "refreshed": len(candidates)}
 
 
 def register_target(home: Path, profile: str, name: str):

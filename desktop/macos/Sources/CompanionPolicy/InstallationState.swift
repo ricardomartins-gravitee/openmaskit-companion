@@ -28,6 +28,12 @@ public struct InstallationState: Codable {
   public var needsOnboarding: Bool { !configured }
   public var canOpenDashboard: Bool { configured && ready && dashboardURL != nil }
   public var canUseLocalConnector: Bool { mode == .managed && configured && ready }
+  public var servicesAreHealthy: Bool {
+    mode == .managed
+      && ["openmaskit", "presidio-analyzer", "connector-relay"].allSatisfy { name in
+        services.contains { $0.name == name && $0.state == "running" && $0.health == "healthy" }
+      }
+  }
   public var dashboardURL: URL? { dashboard.flatMap(Self.localDashboardURL) }
   public var title: String {
     if ready { return health == "healthy" ? "Connected" : "Connected · needs attention" }
@@ -59,6 +65,11 @@ public struct ServiceState: Codable, Identifiable {
   public let name: String
   public let state: String
   public let health: String
+  public init(name: String, state: String, health: String) {
+    self.name = name
+    self.state = state
+    self.health = health
+  }
   public var title: String {
     switch name {
     case "openmaskit": return "OpenMaskit"

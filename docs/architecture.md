@@ -113,3 +113,38 @@ does not automatically pull a new image, recreate containers or migrate state.
 Any later manual update must use a verified compatible image, a complete backup
 and a rollback plan. No automatic update or login item is enabled. Quitting the
 app stops the local host connector; it does not stop managed containers.
+
+## App launch and menu bar operation
+
+The native app starts as an accessory application. It has no configured main
+dashboard window; native AppKit window controllers host SwiftUI onboarding and
+Settings only. Dock reopening opens Settings (or unfinished onboarding). If both
+menu visibility options are disabled, Settings and Dock presence remain reachable.
+The two existing menu visibility preferences are retained independently.
+
+Before creating scenes or starting services, Companion acquires a private,
+per-account kernel file lock in its Application Support directory. Duplicate
+launches notify the running app to reveal Settings and exit without starting
+another connector. The lock is released automatically on normal exit or a crash;
+its file is retained to prevent inode replacement races. A running-app check also
+hands off to an older installed build during an upgrade. Onboarding and Settings
+reuse one controller each and share a single app process and Dock identity.
+
+Automatic runtime startup defaults on and is separately configurable. A loaded,
+configured managed selection is required. A once-per-process gate prevents
+monitoring, opening menus or reopening Settings from reversing a manual stop.
+The native coordinator probes only a validated local Docker context, opens the
+installed Docker Desktop app if necessary, and uses a two-minute readiness
+deadline with individually bounded probes. It
+starts Presidio and the relay before launching a previously paired/approved host
+connector. OpenMaskit is then started, saved active local connections are restored,
+and the full project is checked for health. Existing images are reused with
+`--pull never`; no setup, image update, new pairing or profile approval is automatic.
+
+Connector reconnection reinitializes only custom HTTP targets whose exact relay
+URL belongs to this paired computer and an approved/advertised profile. Inactive,
+unrelated and marketplace targets are excluded. The ordinary deactivate/activate
+API restores sessions without replacing configuration, rules, aliases or secrets.
+Failed reconnection is reported and leaves the target disconnected for repair.
+No interrupted MCP call is replayed. App monitoring detects a running connector's
+offline-to-online transition; an explicitly stopped connector stays stopped.

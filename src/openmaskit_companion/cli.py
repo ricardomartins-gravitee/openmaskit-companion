@@ -26,6 +26,13 @@ def parser():
     commands = root.add_subparsers(dest="action", required=True)
     commands.add_parser("status")
     commands.add_parser("dashboard")
+    commands.add_parser("docker-status")
+    commands.add_parser("connector-status")
+    refresh = commands.add_parser("refresh-connections")
+    refresh.add_argument("--wait-ready", action="store_true")
+    commands.add_parser("start-dependencies")
+    commands.add_parser("start-installed")
+    commands.add_parser("wait-services")
     attach = commands.add_parser("connect-existing")
     attach.add_argument("--url", required=True)
     prepare = commands.add_parser("prepare-managed")
@@ -94,6 +101,41 @@ def main(argv=None):
     try:
         if args.action == "status":
             result = manager.status(home)
+        elif args.action == "docker-status":
+            result = manager.docker_ready(home)
+        elif args.action == "connector-status":
+            result = manager.connector_status(home)
+        elif args.action == "refresh-connections":
+            if args.wait_ready:
+                manager.wait_dashboard(home)
+            result = manager.refresh_connections(home)
+        elif args.action in {"start-dependencies", "start-installed", "wait-services"}:
+            installation.require_configured_managed(home)
+            services = (
+                ["presidio-analyzer", "connector-relay"]
+                if args.action == "start-dependencies"
+                else []
+            )
+            waiting = (
+                []
+                if args.action == "start-installed"
+                else ["--wait", "--wait-timeout", "120"]
+            )
+            manager.compose(
+                home,
+                "up",
+                "--detach",
+                "--pull",
+                "never",
+                *waiting,
+                *services,
+                timeout=180,
+            )
+            result = (
+                manager.finish_start(home)
+                if args.action == "wait-services"
+                else {"ready": True}
+            )
         elif args.action == "connect-existing":
             result = installation.connect_existing(home, args.url)
         elif args.action == "dashboard":

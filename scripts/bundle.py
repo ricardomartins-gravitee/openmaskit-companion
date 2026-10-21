@@ -44,6 +44,8 @@ def write_info_plist(app):
                 "CFBundleIconFile": "AppIcon.icns",
                 "LSMinimumSystemVersion": "14.0",
                 "NSHighResolutionCapable": True,
+                "LSUIElement": True,
+                "LSMultipleInstancesProhibited": True,
             },
             out,
         )
