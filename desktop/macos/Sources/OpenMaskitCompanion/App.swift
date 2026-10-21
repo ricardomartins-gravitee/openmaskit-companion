@@ -536,13 +536,7 @@ struct LocalProfile: Codable, Identifiable {
   init() { CompanionInstance.enforce() }
 
   var body: some Scene {
-    MenuBarExtra(
-      "OpenMaskit Companion", systemImage: "link",
-      isInserted: Binding(
-        get: { preferences.menuBarVisible },
-        // Scene insertion echoes must not overwrite explicit user preferences.
-        set: { preferences.synchronizeMenuBarInsertion($0) })
-    ) {
+    MenuBarExtra("OpenMaskit Companion", systemImage: "link") {
       CompanionMenu(model: model, preferences: preferences)
     }.menuBarExtraStyle(.menu)
       .commands {

@@ -11,13 +11,12 @@ endorsed by upstream.
 signed and notarized. Automatic installation, login startup and automatic
 updates are not enabled.
 
-The app's **Settings** screen has independent options for showing a menu bar
-icon and keeping the app running in the menu bar when its main window closes.
-The menu bar icon is visible by default; closing to the menu bar is off initially.
-Explicit choices are saved independently. Companion is a **menu bar app**: a
-configured launch opens no main window. Status, Open Dashboard, Start All and
-Stop All are in the menu. Onboarding and Settings are its only windows. Local
-MCP approval and registration are under **Settings → Local MCPs**.
+Companion is a **menu bar app**. Its menu bar icon is always available while
+it runs; a configured launch opens no main window. Status, Open Dashboard,
+Start All and Stop All are in the menu. Onboarding and Settings are its only
+windows. Closing either hides the Dock icon and keeps the menu bar item and
+services available. Reopen Settings or quit from the menu. Local MCP approval
+and registration are under **Settings → Local MCPs**.
 Only one Companion process runs per account, including copies opened from
 different folders. Opening it again brings the existing Settings window forward;
 each window belongs to the same app and Dock icon.

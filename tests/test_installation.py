@@ -63,6 +63,12 @@ def test_loopback_address_normalization(value, expected):
         "http://127.0.0.1:65536",
         "http://127.0.0.1:bad",
         "http://[::1",
+        "http://[::1%25lo0]:9473",
+        "http://2130706433:9473",
+        "http://0x7f000001:9473",
+        "http://127.1:9473",
+        "http://169.254.169.254:80",
+        "http://[::ffff:169.254.169.254]:80",
     ],
 )
 def test_invalid_address_fails_before_network_or_state_changes(value, tmp_path):
@@ -71,6 +77,39 @@ def test_invalid_address_fails_before_network_or_state_changes(value, tmp_path):
             installation.connect_existing(tmp_path, value)
     request.assert_not_called()
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "method,url,headers",
+    [
+        ("GET", "http://example.invalid:9473/health", {}),
+        ("GET", "http://169.254.169.254/health", {}),
+        ("GET", "http://127.0.0.1:9999/health", {}),
+        ("GET", "http://127.0.0.2:9473/health", {}),
+        ("POST", URL + "/health", {}),
+        ("GET", URL + "/api/targets", {}),
+        ("GET", URL + "/health?redirect=http://example.invalid", {}),
+        ("GET", "http://user:secret@127.0.0.1:9473/health", {}),
+        ("GET", URL + "/health", {"Authorization": "synthetic"}),
+        ("GET", URL + "/health", {"Cookie": "synthetic"}),
+    ],
+)
+def test_transport_rejects_bypass_before_opening_any_connection(method, url, headers):
+    with installation.HealthProbeTransport(URL) as transport:
+        with patch.object(httpx.HTTPTransport, "handle_request") as network:
+            with pytest.raises(installation.InstallationError):
+                transport.handle_request(httpx.Request(method, url, headers=headers))
+            network.assert_not_called()
+
+
+def test_transport_only_allows_fixed_get_health_at_the_selected_origin():
+    with installation.HealthProbeTransport(URL) as transport:
+        with patch.object(
+            httpx.HTTPTransport, "handle_request", return_value=httpx.Response(200)
+        ) as network:
+            response = transport.handle_request(httpx.Request("GET", URL + "/health"))
+            assert response.status_code == 200
+            network.assert_called_once()
 
 
 @respx.mock

@@ -54,7 +54,11 @@ def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     app = (MAC / "Sources/OpenMaskitCompanion/App.swift").read_text()
     settings = (MAC / "Sources/OpenMaskitCompanion/Settings.swift").read_text()
     windows = (MAC / "Sources/OpenMaskitCompanion/Windows.swift").read_text()
-    assert "MenuBarExtra" in app
+    assert 'MenuBarExtra("OpenMaskit Companion", systemImage: "link")' in app
+    assert "isInserted:" not in app
+    assert "showInMenuBar" not in settings
+    assert "closeToMenuBar" not in settings
+    assert "Menu bar & window" not in settings
     assert "AppPreferences" in app
     assert "NSWindowDelegate" in windows
     assert "preferences.windowClosed()" in windows

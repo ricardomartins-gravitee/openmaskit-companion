@@ -1,30 +1,9 @@
-public enum MenuBarPolicy {
-  public static func isVisible(alwaysShow: Bool, closeToMenuBar: Bool, mainWindowClosed: Bool)
-    -> Bool
-  {
-    alwaysShow || (closeToMenuBar && mainWindowClosed)
-  }
-}
-
+/// Companion is always reachable from its menu bar item. Window presentation
+/// only changes Dock presence; it never changes menu availability.
 public struct MenuBarState: Equatable {
-  public var showInMenuBar: Bool
-  public var closeToMenuBar: Bool
   public var mainWindowClosed: Bool
-
-  public init(
-    showInMenuBar: Bool = false, closeToMenuBar: Bool = false,
-    mainWindowClosed: Bool = false
-  ) {
-    self.showInMenuBar = showInMenuBar
-    self.closeToMenuBar = closeToMenuBar
-    self.mainWindowClosed = mainWindowClosed
-  }
-
-  public var menuBarVisible: Bool {
-    MenuBarPolicy.isVisible(
-      alwaysShow: showInMenuBar, closeToMenuBar: closeToMenuBar,
-      mainWindowClosed: mainWindowClosed)
-  }
+  public init(mainWindowClosed: Bool = false) { self.mainWindowClosed = mainWindowClosed }
+  public var menuBarVisible: Bool { true }
 
   @discardableResult
   public mutating func transition(_ event: MenuBarEvent) -> [MenuBarEffect] {
@@ -32,27 +11,10 @@ public struct MenuBarState: Equatable {
     case .mainWindowWillClose:
       guard !mainWindowClosed else { return [] }
       mainWindowClosed = true
-      return closeToMenuBar ? [.hideDock] : []
-
+      return [.hideDock]
     case .reopenRequested:
       mainWindowClosed = false
-      // Explicit Show/Dock requests must also focus an already-open window.
       return [.revealMainWindow]
-
-    case .showInMenuBarChanged(let value):
-      guard showInMenuBar != value else { return [] }
-      showInMenuBar = value
-      return []
-
-    case .closeToMenuBarChanged(let value):
-      guard closeToMenuBar != value else { return [] }
-      closeToMenuBar = value
-      if value && mainWindowClosed { return [.hideDock] }
-      if !value && mainWindowClosed {
-        mainWindowClosed = false
-        return [.revealMainWindow]
-      }
-      return []
     }
   }
 }
@@ -60,8 +22,6 @@ public struct MenuBarState: Equatable {
 public enum MenuBarEvent: Equatable {
   case mainWindowWillClose
   case reopenRequested
-  case showInMenuBarChanged(Bool)
-  case closeToMenuBarChanged(Bool)
 }
 
 public enum MenuBarEffect: Equatable {

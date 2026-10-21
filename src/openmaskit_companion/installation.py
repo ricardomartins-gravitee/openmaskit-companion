@@ -49,7 +49,7 @@ def local_url(value):
         host = url.hostname
         if host == "localhost":
             host = "127.0.0.1"
-        if not host or not ipaddress.ip_address(host).is_loopback:
+        if not host or "%" in host or not ipaddress.ip_address(host).is_loopback:
             raise ValueError
         port = (
             url.port if url.port is not None else (443 if url.scheme == "https" else 80)
@@ -125,11 +125,49 @@ def require_configured_managed(home):
         raise InstallationError("not_configured")
 
 
+class HealthProbeTransport(httpx.HTTPTransport):
+    """Enforce the health-probe boundary again at the actual HTTP transport.
+
+    The selected origin is validated before client creation. This second check
+    rejects a remote address, alternate path/method, credentials or redirect
+    request even if a future caller bypasses the selection validator.
+    """
+
+    def __init__(self, origin):
+        self.origin = httpx.URL(local_url(origin))
+        super().__init__(trust_env=False, retries=0)
+
+    def handle_request(self, request):
+        url = request.url
+        try:
+            address = ipaddress.ip_address(url.host)
+        except ValueError:
+            raise InstallationError("invalid_url") from None
+        if (
+            not address.is_loopback
+            or "%" in url.host
+            or (url.scheme, url.host, url.port)
+            != (self.origin.scheme, self.origin.host, self.origin.port)
+            or request.method != "GET"
+            or url.raw_path != b"/health"
+            or url.userinfo
+            or request.headers.get("Authorization")
+            or request.headers.get("Cookie")
+        ):
+            raise InstallationError("invalid_url")
+        return super().handle_request(request)
+
+
 def probe(value):
     url = local_url(value)
     try:
         deadline = time.monotonic() + 5
-        with httpx.Client(trust_env=False, timeout=3, follow_redirects=False) as api:
+        with httpx.Client(
+            trust_env=False,
+            timeout=3,
+            follow_redirects=False,
+            transport=HealthProbeTransport(url),
+        ) as api:
             with api.stream("GET", url + "/health") as response:
                 if response.status_code not in {200, 503}:
                     raise InstallationError("not_openmaskit")

@@ -70,8 +70,8 @@ image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and
 synthetic health endpoint. Do not attach or change the user's installation as a
 side effect of running tests.
 
-The macOS tests cover preference persistence and menu-bar behavior: independent
-settings, closing the window while preserving intended background operation,
+The macOS tests cover startup preference persistence and permanent menu availability,
+ignoring all combinations of retired visibility options, closing the window while preserving background operation,
 showing the window from the menu or Dock, and connector termination on Quit.
 Hosted XCTest runs both policy and desktop adapter suites. On local machines
 without XCTest, `scripts/test_macos_policy.py` and

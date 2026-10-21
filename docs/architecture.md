@@ -118,9 +118,11 @@ app stops the local host connector; it does not stop managed containers.
 
 The native app starts as an accessory application. It has no configured main
 dashboard window; native AppKit window controllers host SwiftUI onboarding and
-Settings only. Dock reopening opens Settings (or unfinished onboarding). If both
-menu visibility options are disabled, Settings and Dock presence remain reachable.
-The two existing menu visibility preferences are retained independently.
+Settings only. Dock reopening opens Settings (or unfinished onboarding). The
+menu bar item is unconditional and is available throughout onboarding, Settings
+and background operation. Closing the last window always switches to accessory
+presentation and hides the Dock icon. Retired visibility preferences are ignored,
+including explicit opt-outs saved by older builds.
 
 Before creating scenes or starting services, Companion acquires a private,
 per-account kernel file lock in its Application Support directory. Duplicate

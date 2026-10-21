@@ -137,17 +137,6 @@ struct SettingsScreen: View {
 
   private var appearanceSettings: some View {
     VStack(spacing: CompanionTokens.spaceMd) {
-      CompanionPanel("Menu bar & window") {
-        Toggle("Show OpenMaskit Companion in the menu bar", isOn: $preferences.showInMenuBar)
-          .help("The connection icon appears in the macOS menu bar at the top of the screen.")
-        Divider().overlay(CompanionTheme.border)
-        Toggle(
-          "Keep running in the menu bar when I close the window", isOn: $preferences.closeToMenuBar)
-        Text(
-          "When enabled, closing the window hides its Dock icon. Reopen or quit from the menu bar; services and MCP connections keep running."
-        )
-        .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
-      }
       CompanionPanel("Startup & updates") {
         Toggle(
           "Start services and local MCPs when Companion opens",
