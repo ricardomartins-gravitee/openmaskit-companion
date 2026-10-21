@@ -8,24 +8,30 @@ struct SettingsScreen: View {
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    Form {
-      Section("Menu bar and window") {
+    VStack(spacing: 12) {
+      CompanionPanel("Menu bar & window") {
         Toggle("Show OpenMaskit Companion in the menu bar", isOn: $preferences.showInMenuBar)
+          .help("The connection icon appears in the macOS menu bar at the top of the screen.")
+        Divider().overlay(CompanionTheme.border)
         Toggle(
           "Keep running in the menu bar when I close the window", isOn: $preferences.closeToMenuBar)
         Text(
-          "Closing the main window will hide the Dock icon. Use the menu bar icon to reopen the window or quit. Your services and local MCP connections keep running."
+          "When enabled, closing the window hides its Dock icon. Reopen or quit from the menu bar; services and MCP connections keep running."
         )
-        .font(.callout).foregroundStyle(.secondary)
+        .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
       }
-      Section("Startup and updates") {
+      CompanionPanel("Startup & updates") {
         Text(
-          "The app starts manually. Automatic updates are not enabled in this development build."
+          "Start the app manually. Updates are manual in this development build."
         )
-        .foregroundStyle(.secondary)
+        .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
       }
     }
-    .formStyle(.grouped).padding(10).frame(width: 540, height: 310)
+    .toggleStyle(.switch).controlSize(.small)
+    .font(.system(size: 12)).foregroundStyle(CompanionTheme.text)
+    .tint(CompanionTheme.accent).padding(16)
+    .frame(width: 520).fixedSize(horizontal: false, vertical: true)
+    .background(CompanionTheme.root).preferredColorScheme(.dark)
     .onAppear {
       preferences.openMainWindow = { openWindow(id: "main") }
     }
@@ -82,6 +88,8 @@ struct MainWindowObserver: NSViewRepresentable {
       guard let window, self.window !== window else { return }
       if let token { NotificationCenter.default.removeObserver(token) }
       self.window = window
+      window.titlebarAppearsTransparent = true
+      window.backgroundColor = NSColor(CompanionTheme.root)
       token = NotificationCenter.default.addObserver(
         forName: NSWindow.willCloseNotification,
         object: window, queue: .main
