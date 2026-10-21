@@ -32,7 +32,9 @@ def image_digest(value: str) -> str:
     suffix = value[len(IMAGE_PREFIX) :]
     if len(suffix) != 64 or any(c not in "0123456789abcdef" for c in suffix):
         raise ValueError("Invalid release digest")
-    return value
+    # Reconstruct the Docker reference from a fixed repository and binary
+    # digest; the caller's original text never becomes a command argument.
+    return IMAGE_PREFIX + bytes.fromhex(suffix).hex()
 
 
 def docker_binary():

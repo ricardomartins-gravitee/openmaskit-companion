@@ -158,7 +158,16 @@ def test_upgrade_preserves_private_state_settings_and_only_prepares_tls(
 
 @pytest.mark.parametrize(
     "image",
-    ["latest", manager.IMAGE_PREFIX + "A" * 64, manager.IMAGE_PREFIX + "a" * 63],
+    [
+        "latest",
+        manager.IMAGE_PREFIX + "A" * 64,
+        manager.IMAGE_PREFIX + "a" * 63,
+        "--privileged",
+        manager.IMAGE_PREFIX + "a" * 64 + " --privileged",
+        manager.IMAGE_PREFIX + "a" * 64 + ";echo unsafe",
+        manager.IMAGE_PREFIX + "a" * 63 + "\n",
+        manager.IMAGE_PREFIX + "a" * 62 + "00/../../other",
+    ],
 )
 def test_bad_image_is_rejected_before_side_effects(tmp_path, monkeypatch, image):
     home = managed_home(tmp_path)

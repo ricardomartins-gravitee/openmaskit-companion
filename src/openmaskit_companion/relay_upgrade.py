@@ -16,7 +16,7 @@ from . import installation, manager, relay_tls
 
 
 def preflight(image):
-    manager.image_digest(image)
+    image = manager.image_digest(image)
     binary = manager.docker_binary()
     manager.local_docker(binary, os.environ)
     result = subprocess.run(  # nosec B603
