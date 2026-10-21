@@ -5,11 +5,26 @@ import XCTest
 @testable import CompanionDesktopCore
 
 @MainActor final class AppPreferencesTests: XCTestCase {
-  func privateDefaults() -> UserDefaults {
+  func privateDefaults(showInMenuBar: Bool? = false) -> UserDefaults {
     let name = "companion-tests-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: name)!
     addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+    if let showInMenuBar { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
     return defaults
+  }
+
+  func testFirstLaunchShowsMenuBarWithoutEnablingCloseToMenuBar() async {
+    let defaults = privateDefaults(showInMenuBar: nil)
+    let preferences = AppPreferences(
+      defaults: defaults, setActivationPolicy: { _ in }, activate: {})
+    XCTAssertTrue(preferences.showInMenuBar)
+    XCTAssertTrue(preferences.menuBarVisible)
+    XCTAssertFalse(preferences.closeToMenuBar)
+    preferences.showInMenuBar = false
+    let relaunched = AppPreferences(
+      defaults: defaults, setActivationPolicy: { _ in }, activate: {})
+    XCTAssertFalse(relaunched.showInMenuBar, "An explicit opt-out survives relaunch")
+    XCTAssertFalse(relaunched.menuBarVisible)
   }
 
   func testCloseCallsAppKitAdapterAndReopenRestoresDockAndWindow() async {
@@ -35,7 +50,7 @@ import XCTest
     XCTAssertFalse(preferences.menuBarVisible)
   }
 
-  func testDefaultsAndIndependentPreferencePersistence() async {
+  func testExplicitOptOutAndIndependentPreferencePersistence() async {
     let defaults = privateDefaults()
     let preferences = AppPreferences(
       defaults: defaults, setActivationPolicy: { _ in }, activate: {})

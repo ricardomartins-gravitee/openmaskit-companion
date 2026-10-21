@@ -20,6 +20,7 @@ import CompanionPolicy
       NSApplication.shared.activate(ignoringOtherApps: true)
     }
   ) {
+    defaults.register(defaults: ["showInMenuBar": true])
     self.defaults = defaults
     self.setActivationPolicy = setActivationPolicy
     self.activate = activate

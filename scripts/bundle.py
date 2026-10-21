@@ -12,6 +12,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def copy_app_icons(resources):
+    assets = ROOT / "desktop/macos/Assets"
+    for name in ("AppIcon.png", "AppIcon.icns"):
+        shutil.copy2(assets / name, resources / name)
+
+
+def write_info_plist(app):
+    with (app / "Info.plist").open("wb") as out:
+        plistlib.dump(
+            {
+                "CFBundleIdentifier": "io.github.ricardomartins-gravitee.openmaskit-companion",
+                "CFBundleName": "OpenMaskit Companion",
+                "CFBundleExecutable": "OpenMaskitCompanion",
+                "CFBundlePackageType": "APPL",
+                "CFBundleShortVersionString": "0.1.0",
+                "CFBundleVersion": "2",
+                "CFBundleIconFile": "AppIcon.icns",
+                "LSMinimumSystemVersion": "14.0",
+                "NSHighResolutionCapable": True,
+            },
+            out,
+        )
+
+
 def main():
     if platform.system() != "Darwin":
         raise SystemExit("OpenMaskit Companion is a macOS application")
@@ -70,6 +94,7 @@ def main():
         resources / "backend/openmaskit-companion",
         dirs_exist_ok=True,
     )
+    copy_app_icons(resources)
     connector = json.loads((ROOT / "dependencies/connector.json").read_text())
     from importlib.metadata import version
 
@@ -84,20 +109,7 @@ def main():
 
         release["companion_image"] = image_digest(args.image)
     (resources / "release.json").write_text(json.dumps(release, indent=2))
-    with (app / "Info.plist").open("wb") as out:
-        plistlib.dump(
-            {
-                "CFBundleIdentifier": "io.github.ricardomartins-gravitee.openmaskit-companion",
-                "CFBundleName": "OpenMaskit Companion",
-                "CFBundleExecutable": "OpenMaskitCompanion",
-                "CFBundlePackageType": "APPL",
-                "CFBundleShortVersionString": "0.1.0",
-                "CFBundleVersion": "1",
-                "LSMinimumSystemVersion": "14.0",
-                "NSHighResolutionCapable": True,
-            },
-            out,
-        )
+    write_info_plist(app)
     print("Development app built. Not distribution-signed or notarized.")
 
 

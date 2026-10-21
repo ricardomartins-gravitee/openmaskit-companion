@@ -12,7 +12,8 @@ updates are not enabled.
 
 The app's **Settings** screen has independent options for showing a menu bar
 icon and keeping the app running in the menu bar when its main window closes.
-These options are off initially. Monitoring continues while the window is
+The menu bar icon is visible by default; closing to the menu bar is off initially.
+Explicit choices are saved independently. Monitoring continues while the window is
 hidden. Quitting stops the local connector; managed containers keep their
 normal state until explicitly stopped.
 

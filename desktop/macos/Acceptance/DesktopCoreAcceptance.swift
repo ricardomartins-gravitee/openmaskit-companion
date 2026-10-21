@@ -7,6 +7,10 @@ import CompanionDesktopCore
         let suite = "companion-acceptance-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
+        let firstLaunch = AppPreferences(defaults: defaults,
+            setActivationPolicy: { _ in }, activate: {})
+        precondition(firstLaunch.showInMenuBar && firstLaunch.menuBarVisible && !firstLaunch.closeToMenuBar)
+        firstLaunch.showInMenuBar = false
         var policies: [NSApplication.ActivationPolicy] = []
         var opened = 0, activated = 0, changes = 0
         let preferences = AppPreferences(defaults: defaults,

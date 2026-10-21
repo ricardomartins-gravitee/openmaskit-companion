@@ -207,6 +207,14 @@ struct LocalProfile: Codable, Identifiable {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   var model: CompanionModel?
   var preferences: AppPreferences?
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    NSApp.appearance = NSAppearance(named: .darkAqua)
+    if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+      let image = NSImage(contentsOf: url)
+    {
+      NSApp.applicationIconImage = image
+    }
+  }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
@@ -227,140 +235,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   var body: some Scene {
     Window("OpenMaskit Companion", id: "main") {
-      VStack(alignment: .leading, spacing: 22) {
-        HStack(alignment: .top) {
-          Image(systemName: "desktopcomputer.and.arrow.down")
-            .font(.system(size: 30)).foregroundStyle(.blue)
-          VStack(alignment: .leading, spacing: 5) {
-            Text("OpenMaskit Companion").font(.largeTitle.bold())
-            Text("Your local services and MCP connections").foregroundStyle(.secondary)
-          }
-          Spacer()
-          Text("Development alpha").font(.caption).padding(7)
-            .background(.orange.opacity(0.12), in: Capsule())
+      CompanionOverview(model: model, preferences: preferences)
+        .onAppear {
+          delegate.model = model
+          delegate.preferences = preferences
+          model.startMonitoring()
         }
-        GroupBox("Services") {
-          VStack(alignment: .leading, spacing: 12) {
-            if !model.installation.initialized {
-              Text(
-                "Set up a separate OpenMaskit installation with Presidio. Your existing services remain available."
-              )
-              Button("Set Up OpenMaskit") {
-                if let image = model.releaseImage {
-                  Task {
-                    await model.action(
-                      ["setup", "--image", image],
-                      success: "Installation prepared. Choose Start Services.")
-                  }
-                } else {
-                  model.message =
-                    "This development build needs a published relay image. See the source setup instructions."
-                }
-              }
-            } else {
-              ForEach(model.installation.services) { service in
-                HStack {
-                  Circle().fill(service.health == "healthy" ? .green : .gray).frame(
-                    width: 8, height: 8)
-                  Text(service.title)
-                  Spacer()
-                  Text(service.health.isEmpty ? service.state : service.health).foregroundStyle(
-                    .secondary)
-                }
-              }
-              if model.installation.services.isEmpty {
-                Text("Services are stopped.").foregroundStyle(.secondary)
-              }
-              HStack {
-                Button("Start Services") {
-                  Task { await model.action(["start"], success: "Services are ready.") }
-                }
-                Button("Stop Services") {
-                  Task {
-                    await model.action(
-                      ["stop"], success: "Services stopped. Your settings are saved.")
-                  }
-                }
-                Spacer()
-                Button("Open OpenMaskit") {
-                  NSWorkspace.shared.open(URL(string: "http://127.0.0.1:9493")!)
-                }
-              }
-            }
-          }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        GroupBox("Local MCPs") {
-          VStack(alignment: .leading, spacing: 12) {
-            Text(
-              model.installation.paired
-                ? "This Mac is paired with your local OpenMaskit installation."
-                : "Pair this Mac, then approve the MCPs it can run."
-            )
-            .foregroundStyle(.secondary)
-            HStack {
-              Button(model.installation.paired ? "Pair Again" : "Pair This Mac") {
-                Task { await model.pair() }
-              }
-              .disabled(!model.installation.initialized)
-              Button("Add Local MCP…") { model.approve() }
-              Spacer()
-              Button(model.connectorRunning ? "Stop Connector" : "Start Connector") {
-                model.toggleConnector()
-              }
-              .disabled(!model.installation.paired)
-            }
-            ForEach(model.profiles) { profile in
-              HStack {
-                Image(systemName: "checkmark.shield").foregroundStyle(.green)
-                Text(profile.name)
-                Spacer()
-                Button("Add to OpenMaskit") {
-                  Task {
-                    await model.action(
-                      ["register", profile.id, "--name", profile.name],
-                      success: "MCP added. Configure its checks in OpenMaskit.")
-                  }
-                }.disabled(!model.connectorRunning)
-              }
-            }
-            ForEach(model.installation.connectors ?? []) { connector in
-              Label(
-                connector.name + (connector.connected ? " · Connected" : " · Offline"),
-                systemImage: connector.connected ? "link" : "link.badge.plus"
-              )
-              .font(.callout).foregroundStyle(connector.connected ? .green : .secondary)
-            }
-          }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        HStack {
-          Image(systemName: "arrow.triangle.2.circlepath")
-          Text("Updates are manual in this development build.").foregroundStyle(.secondary)
-          Spacer()
-          Button("Refresh") { Task { await model.refresh() } }
-          SettingsLink { Text("Settings…") }
-        }.font(.callout)
-        if model.busy { ProgressView("Working…").controlSize(.small) }
-        if let error = model.installation.error { Text(error).foregroundStyle(.orange) }
-        if !model.message.isEmpty { Text(model.message).font(.callout).textSelection(.enabled) }
-      }
-      .padding(28).frame(minWidth: 680, minHeight: 520)
-      .disabled(model.busy)
-      .background(MainWindowObserver(preferences: preferences))
-      .onAppear {
-        delegate.model = model
-        delegate.preferences = preferences
-        model.startMonitoring()
-      }
     }
     .windowResizability(.contentSize)
     Settings { SettingsScreen(preferences: preferences) }
     MenuBarExtra(
-      "OpenMaskit Companion", systemImage: "shield.lefthalf.filled",
+      "OpenMaskit Companion", systemImage: "link",
       isInserted: Binding(
         get: { preferences.menuBarVisible },
-        // SwiftUI echoes insertion state while synchronizing scenes. Only
-        // Settings changes the preferences; publishing the echo loops and
-        // would turn close-only visibility into a permanent menu-bar option.
+        // Scene insertion echoes must not overwrite explicit user preferences.
         set: { preferences.synchronizeMenuBarInsertion($0) })
     ) {
       CompanionMenu(model: model, preferences: preferences)
