@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
         "start-installed",
         "wait-services",
         "connector-status",
+        "keep-connections",
         "refresh-connections",
     ],
 )

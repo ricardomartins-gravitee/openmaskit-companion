@@ -34,6 +34,7 @@ struct LocalProfile: Codable, Identifiable {
   private var connector: Process?
   private var retiringConnector: Process?
   private var connectorWasOnline = false
+  private var lastKeepAlive = ContinuousClock.now
   private let startup = ServiceStartup()
   private var monitor: Task<Void, Never>?
 
@@ -78,7 +79,8 @@ struct LocalProfile: Codable, Identifiable {
     let allArguments = baseArguments + arguments
     let longActions = ["start", "prepare-managed"]
     let runtimeActions = [
-      "start-dependencies", "start-installed", "wait-services", "refresh-connections", "register",
+      "start-dependencies", "start-installed", "wait-services", "refresh-connections",
+      "keep-connections", "register",
     ]
     let timeout: TimeInterval =
       longActions.contains(arguments.first ?? "")
@@ -130,6 +132,21 @@ struct LocalProfile: Codable, Identifiable {
           try await restoreConnections()
         }
         connectorWasOnline = online
+        if online && ContinuousClock.now - lastKeepAlive >= .seconds(60) {
+          lastKeepAlive = .now
+          busy = true
+          defer { busy = false }
+          do {
+            struct Kept: Decodable { let failed: Int }
+            let result = try JSONDecoder().decode(
+              Kept.self, from: await invoke(["keep-connections"]))
+            if result.failed > 0 {
+              message = "A local MCP is not responding. Restart its connector in Settings."
+            }
+          } catch {
+            message = "Local MCP connection check failed. Check its status in Settings."
+          }
+        }
       }
     } catch {
       guard generation == configurationGeneration && !busy else { return }
@@ -148,6 +165,7 @@ struct LocalProfile: Codable, Identifiable {
     let args = ["refresh-connections"] + (waitReady ? ["--wait-ready"] : [])
     let result = try JSONDecoder().decode(Status.self, from: await invoke(args))
     guard result.connected else { throw StartupFailure.connectorUnavailable }
+    lastKeepAlive = .now
   }
 
   private var startupActions: StartupActions {

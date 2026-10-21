@@ -21,6 +21,7 @@ from . import installation
 
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
+MCP = "http://127.0.0.1:9494"
 RELAY = "http://127.0.0.1:9495"
 IMAGE_PREFIX = "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
 
@@ -336,14 +337,8 @@ def wait_dashboard(home):
     raise installation.InstallationError("unavailable")
 
 
-def refresh_connections(home):
-    """Reinitialize only active targets for this paired, approved connector.
-
-    Existing proxy sessions cannot survive a connector restart. Recreating those
-    sessions never edits their config, masking rules, credentials or aliases and
-    never retries an interrupted tool call.
-    """
-    installation.require_configured_managed(home)
+def _local_connection_targets(home, api):
+    """Select only saved active targets for this paired, approved connector."""
     from openmaskit_connector.connector import profiles
     from openmaskit_connector.state import identifier
 
@@ -353,31 +348,78 @@ def refresh_connections(home):
     rows = admin(home, "GET", "/admin/connectors")["connectors"]
     current = next((row for row in rows if row["id"] == key and row["connected"]), None)
     if current is None:
-        return {"connected": False, "refreshed": 0}
+        return None
     urls = {
         f"http://connector-relay:9495/mcp/{key}/{identifier(profile)}"
         for profile in approved
         if profile in current["profiles"]
     }
+    response = api.get("/api/targets")
+    response.raise_for_status()
+    candidates = []
+    for row in response.json()["targets"]:
+        config = row.get("config") or {}
+        if (
+            row.get("source") == "custom"
+            and config.get("transport") == "http"
+            and config.get("url") in urls
+        ):
+            target = identifier(row["name"])
+            saved = api.get(f"/api/targets/custom/{target}")
+            saved.raise_for_status()
+            data = saved.json()
+            if data["active"] and data["config"].get("url") in urls:
+                candidates.append(target)
+    if len(candidates) > 32:
+        raise ValueError("Too many local MCP connections to refresh at once")
+    return candidates
+
+
+def keep_connections(home):
+    """Send protocol pings through OpenMaskit; never run tools or reset sessions."""
+    installation.require_configured_managed(home)
     with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
-        response = api.get("/api/targets")
-        response.raise_for_status()
-        candidates = []
-        for row in response.json()["targets"]:
-            config = row.get("config") or {}
-            if (
-                row.get("source") == "custom"
-                and config.get("transport") == "http"
-                and config.get("url") in urls
-            ):
-                target = identifier(row["name"])
-                saved = api.get(f"/api/targets/custom/{target}")
-                saved.raise_for_status()
-                data = saved.json()
-                if data["active"] and data["config"].get("url") in urls:
-                    candidates.append(target)
-        if len(candidates) > 32:
-            raise ValueError("Too many local MCP connections to refresh at once")
+        candidates = _local_connection_targets(home, api)
+    if candidates is None:
+        return {"connected": False, "checked": 0, "failed": 0}
+    failed = 0
+    with httpx.Client(base_url=MCP, trust_env=False, timeout=5) as api:
+        for target in candidates:
+            try:
+                response = api.post(
+                    f"/{target}/mcp",
+                    headers={"Accept": "application/json, text/event-stream"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "companion-keepalive",
+                        "method": "ping",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                # A legacy server's method-not-found response also proves the
+                # transport is alive, without calling any mailbox/tool method.
+                alive = (
+                    isinstance(data, dict)
+                    and data.get("id") == "companion-keepalive"
+                    and (
+                        "result" in data
+                        or (data.get("error") or {}).get("code") == -32601
+                    )
+                )
+                failed += not alive
+            except (httpx.HTTPError, ValueError, AttributeError):
+                failed += 1
+    return {"connected": True, "checked": len(candidates), "failed": failed}
+
+
+def refresh_connections(home):
+    """Restore saved sessions after a connector restart, without replaying calls."""
+    installation.require_configured_managed(home)
+    with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
+        candidates = _local_connection_targets(home, api)
+        if candidates is None:
+            return {"connected": False, "refreshed": 0}
         if candidates:
             response = api.get("/api/csrf")
             response.raise_for_status()

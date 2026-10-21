@@ -148,3 +148,8 @@ API restores sessions without replacing configuration, rules, aliases or secrets
 Failed reconnection is reported and leaves the target disconnected for repair.
 No interrupted MCP call is replayed. App monitoring detects a running connector's
 offline-to-online transition; an explicitly stopped connector stays stopped.
+While the app-owned connector is online, monitoring sends at most one keepalive
+batch per minute to those same active, approved targets through OpenMaskit's MCP
+endpoint. These are bounded protocol `ping` requests, retaining the relay's
+five-minute idle-session limit. They never invoke tools, bypass masking, reset
+sessions or retry interrupted calls. Failed checks are reported for repair.

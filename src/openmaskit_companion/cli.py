@@ -28,6 +28,7 @@ def parser():
     commands.add_parser("dashboard")
     commands.add_parser("docker-status")
     commands.add_parser("connector-status")
+    commands.add_parser("keep-connections")
     refresh = commands.add_parser("refresh-connections")
     refresh.add_argument("--wait-ready", action="store_true")
     commands.add_parser("start-dependencies")
@@ -105,6 +106,8 @@ def main(argv=None):
             result = manager.docker_ready(home)
         elif args.action == "connector-status":
             result = manager.connector_status(home)
+        elif args.action == "keep-connections":
+            result = manager.keep_connections(home)
         elif args.action == "refresh-connections":
             if args.wait_ready:
                 manager.wait_dashboard(home)

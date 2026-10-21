@@ -31,6 +31,7 @@ def host(tmp_path):
         "wait-services",
         "docker-status",
         "connector-status",
+        "keep-connections",
         "refresh-connections",
     ],
 )
@@ -56,6 +57,7 @@ def test_automatic_start_never_initializes_a_fresh_installation(
         "start-installed",
         "docker-status",
         "connector-status",
+        "keep-connections",
         "refresh-connections",
     ],
 )
@@ -285,3 +287,87 @@ def test_reconnect_is_bounded_before_changing_any_connection(host):
     ):
         manager.refresh_connections(host)
     assert all(call.request.method == "GET" for call in respx.calls)
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "reply,failed",
+    [
+        ({"result": {}}, 0),
+        ({"error": {"code": -32601}}, 0),
+        ({"error": {"code": -32000}}, 1),
+        ({"error": "malformed"}, 1),
+        ({"unexpected": True}, 1),
+    ],
+)
+def test_keepalive_only_pings_active_owned_targets_without_replaying_tools(
+    host, reply, failed
+):
+    respx.get(manager.WEB + "/api/targets").respond(
+        200,
+        json={
+            "targets": [
+                target(),
+                target("remote", "https://example.invalid/mcp"),
+                target("inactive"),
+            ]
+        },
+    )
+    respx.get(manager.WEB + "/api/targets/custom/fixture").respond(
+        200, json={"active": True, "config": target()["config"]}
+    )
+    respx.get(manager.WEB + "/api/targets/custom/inactive").respond(
+        200, json={"active": False, "config": target()["config"]}
+    )
+    ping = respx.post(manager.MCP + "/fixture/mcp").respond(
+        200, json={"jsonrpc": "2.0", "id": "companion-keepalive", **reply}
+    )
+    before = {p: p.read_bytes() for p in host.rglob("*") if p.is_file()}
+    with patch.object(manager, "admin", return_value=online()):
+        assert manager.keep_connections(host) == {
+            "connected": True,
+            "checked": 1,
+            "failed": failed,
+        }
+    assert json.loads(ping.calls[0].request.content) == {
+        "jsonrpc": "2.0",
+        "id": "companion-keepalive",
+        "method": "ping",
+    }
+    assert {p: p.read_bytes() for p in before} == before
+    assert len([call for call in respx.calls if call.request.method != "GET"]) == 1
+
+
+@respx.mock
+def test_keepalive_timeout_does_not_reconnect_or_replay_anything(host):
+    import httpx
+
+    respx.get(manager.WEB + "/api/targets").respond(200, json={"targets": [target()]})
+    respx.get(manager.WEB + "/api/targets/custom/fixture").respond(
+        200, json={"active": True, "config": target()["config"]}
+    )
+    ping = respx.post(manager.MCP + "/fixture/mcp").mock(
+        side_effect=httpx.ReadTimeout("synthetic")
+    )
+    with patch.object(manager, "admin", return_value=online()):
+        assert manager.keep_connections(host) == {
+            "connected": True,
+            "checked": 1,
+            "failed": 1,
+        }
+    assert ping.call_count == 1
+    assert all(
+        call.request.method == "GET" or call.request.url.path == "/fixture/mcp"
+        for call in respx.calls
+    )
+
+
+@respx.mock
+def test_keepalive_offline_does_nothing(host):
+    with patch.object(manager, "admin", return_value={"connectors": []}):
+        assert manager.keep_connections(host) == {
+            "connected": False,
+            "checked": 0,
+            "failed": 0,
+        }
+    assert not respx.calls

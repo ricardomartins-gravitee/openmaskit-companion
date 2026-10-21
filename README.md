@@ -31,6 +31,9 @@ under **Settings → General → Start services and local MCPs when Companion op
 Manual stops are respected until the next app launch. Fresh onboarding and
 externally managed installations never trigger automatic startup. No login item
 or automatic installation/update is enabled; automatic startup never pulls images.
+While its connector runs, Companion sends a protocol ping through OpenMaskit
+once a minute to prevent the relay's idle timeout. It never calls MCP tools or
+replays interrupted operations as part of these checks.
 
 ## Components
 
