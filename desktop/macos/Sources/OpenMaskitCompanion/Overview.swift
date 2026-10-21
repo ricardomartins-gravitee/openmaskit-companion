@@ -23,7 +23,7 @@ struct CompanionOverview: View {
       header
       Divider().overlay(CompanionTheme.border)
       ScrollView {
-        VStack(spacing: 12) {
+        VStack(spacing: CompanionTokens.spaceMd) {
           services
           localMCPs
           if let error = model.installation.error {
@@ -33,7 +33,7 @@ struct CompanionOverview: View {
             notice(model.message, color: CompanionTheme.secondary)
           }
         }
-        .padding(16)
+        .padding(CompanionTokens.spaceLg)
         .frame(maxWidth: .infinity)
         .background(
           GeometryReader { geometry in
@@ -48,7 +48,7 @@ struct CompanionOverview: View {
       Divider().overlay(CompanionTheme.border)
       footer
     }
-    .font(.system(size: 12))
+    .font(CompanionTypography.body)
     .foregroundStyle(CompanionTheme.text)
     .background(CompanionTheme.root)
     .frame(width: 620)
@@ -63,23 +63,23 @@ struct CompanionOverview: View {
       CompanionBrandIcon(size: 36)
       VStack(alignment: .leading, spacing: 3) {
         Text("OpenMaskit Companion")
-          .font(.system(size: 17, weight: .semibold, design: .monospaced))
+          .font(CompanionTypography.title)
           .accessibilityAddTraits(.isHeader)
         Text("Local services & MCP connections")
-          .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
+          .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
       }
       Spacer()
       CompanionBadge(title: "Development alpha", color: CompanionTheme.orange)
     }
-    .padding(.horizontal, 16).padding(.vertical, 12)
+    .padding(.horizontal, CompanionTokens.spaceLg).padding(.vertical, CompanionTokens.spaceMd)
     .background(CompanionTheme.surface)
   }
 
   private var services: some View {
     CompanionPanel("Services", detail: model.installation.initialized ? nil : "Not set up") {
       if !model.installation.initialized {
-        HStack(spacing: 16) {
-          VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: CompanionTokens.spaceLg) {
+          VStack(alignment: .leading, spacing: CompanionTokens.spaceXs) {
             Text("Set up your local services").fontWeight(.medium)
             Text("A dedicated OpenMaskit, Presidio and relay installation.")
               .foregroundStyle(CompanionTheme.secondary)
@@ -105,7 +105,7 @@ struct CompanionOverview: View {
           Text("Services are stopped.").foregroundStyle(CompanionTheme.secondary)
         }
         ForEach(model.installation.services) { service in
-          HStack(spacing: 8) {
+          HStack(spacing: CompanionTokens.spaceSm) {
             Circle().fill(service.health == "healthy" ? CompanionTheme.green : CompanionTheme.muted)
               .frame(width: 6, height: 6)
             Text(service.title)
@@ -115,7 +115,7 @@ struct CompanionOverview: View {
               .foregroundStyle(CompanionTheme.secondary)
           }
         }
-        HStack(spacing: 8) {
+        HStack(spacing: CompanionTokens.spaceSm) {
           Button("Start Services") {
             Task { await model.action(["start"], success: "Services are ready.") }
           }.buttonStyle(CompanionButtonStyle(kind: .primary))
@@ -136,7 +136,7 @@ struct CompanionOverview: View {
 
   private var localMCPs: some View {
     CompanionPanel("Local MCPs", detail: "\(model.profiles.count) approved") {
-      HStack(spacing: 8) {
+      HStack(spacing: CompanionTokens.spaceSm) {
         Circle().fill(model.installation.paired ? CompanionTheme.teal : CompanionTheme.muted)
           .frame(width: 6, height: 6)
         Text(
@@ -146,7 +146,7 @@ struct CompanionOverview: View {
         )
         .foregroundStyle(CompanionTheme.secondary)
       }
-      HStack(spacing: 8) {
+      HStack(spacing: CompanionTokens.spaceSm) {
         Button(model.installation.paired ? "Pair Again" : "Pair This Mac") {
           Task { await model.pair() }
         }
@@ -163,10 +163,10 @@ struct CompanionOverview: View {
       }
       if model.profiles.isEmpty {
         Text("No local MCP profiles added yet.")
-          .font(.system(size: 11)).foregroundStyle(CompanionTheme.muted)
+          .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.muted)
       }
       ForEach(model.profiles) { profile in
-        HStack(spacing: 8) {
+        HStack(spacing: CompanionTokens.spaceSm) {
           Image(systemName: "checkmark.shield").foregroundStyle(CompanionTheme.teal)
           Text(profile.name).lineLimit(2)
           Spacer()
@@ -186,7 +186,7 @@ struct CompanionOverview: View {
           connector.name + (connector.connected ? " · Connected" : " · Offline"),
           systemImage: connector.connected ? "link" : "link.badge.plus"
         )
-        .font(.system(size: 11))
+        .font(CompanionTypography.caption)
         .foregroundStyle(connector.connected ? CompanionTheme.green : CompanionTheme.secondary)
       }
     }
@@ -194,7 +194,7 @@ struct CompanionOverview: View {
   }
 
   private var footer: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: CompanionTokens.spaceSm) {
       if model.busy {
         ProgressView().controlSize(.mini)
         Text("Working…")
@@ -208,13 +208,13 @@ struct CompanionOverview: View {
       SettingsLink { Label("Settings", systemImage: "gearshape") }
         .buttonStyle(CompanionButtonStyle())
     }
-    .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
-    .padding(.horizontal, 16).padding(.vertical, 10)
+    .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
+    .padding(.horizontal, CompanionTokens.spaceLg).padding(.vertical, 10)
     .background(CompanionTheme.surface)
   }
 
   private func notice(_ text: String, color: Color) -> some View {
-    Text(text).font(.system(size: 11)).foregroundStyle(color)
+    Text(text).font(CompanionTypography.caption).foregroundStyle(color)
       .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
   }
 }

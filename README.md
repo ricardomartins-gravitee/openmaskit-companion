@@ -106,3 +106,9 @@ The connector core is portable, but native Windows/Linux companion apps and
 remote relay deployments require separate designs and acceptance. See
 [SonarQube setup](docs/sonarqube.md) for the analysis configured for this
 companion repository.
+
+## Shared design system
+
+The native app uses the same versioned design values as OpenMaskit's web UI,
+through a revision-pinned native SwiftUI package. See
+[design-system.md](docs/design-system.md) for integration and coordinated updates.

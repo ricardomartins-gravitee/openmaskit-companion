@@ -8,7 +8,7 @@ struct SettingsScreen: View {
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: CompanionTokens.spaceMd) {
       CompanionPanel("Menu bar & window") {
         Toggle("Show OpenMaskit Companion in the menu bar", isOn: $preferences.showInMenuBar)
           .help("The connection icon appears in the macOS menu bar at the top of the screen.")
@@ -18,18 +18,18 @@ struct SettingsScreen: View {
         Text(
           "When enabled, closing the window hides its Dock icon. Reopen or quit from the menu bar; services and MCP connections keep running."
         )
-        .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
+        .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
       }
       CompanionPanel("Startup & updates") {
         Text(
           "Start the app manually. Updates are manual in this development build."
         )
-        .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
+        .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
       }
     }
     .toggleStyle(.switch).controlSize(.small)
-    .font(.system(size: 12)).foregroundStyle(CompanionTheme.text)
-    .tint(CompanionTheme.accent).padding(16)
+    .font(CompanionTypography.body).foregroundStyle(CompanionTheme.text)
+    .tint(CompanionTheme.accent).padding(CompanionTokens.spaceLg)
     .frame(width: 520).fixedSize(horizontal: false, vertical: true)
     .background(CompanionTheme.root).preferredColorScheme(.dark)
     .onAppear {
