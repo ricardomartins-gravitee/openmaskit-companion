@@ -1,8 +1,9 @@
 # OpenMaskit Companion
 
-An optional macOS desktop manager for a local OpenMaskit installation. It
-manages a dedicated OpenMaskit and Presidio Compose project and integrates the
-separately maintained OpenMaskit Connector for locally approved MCP servers.
+An optional macOS desktop manager for a local OpenMaskit installation. Connect
+to an existing installation, or manage a dedicated OpenMaskit and Presidio
+Compose project with the separately maintained OpenMaskit Connector for locally
+approved MCP servers.
 This is a separate project, not a renamed OpenMaskit distribution, and is not
 endorsed by upstream.
 
@@ -50,12 +51,43 @@ explicitly so pairing credentials and approved profiles remain in place. Use
 State directories are mode 0700 and credential files mode 0600 on POSIX. Protect
 state with appropriate account permissions on other platforms.
 
-## Managed installation
+## Choose an installation
 
-Use a tested immutable connector relay image digest:
+On first launch, onboarding defaults to **Use existing**. Enter the dashboard
+address (for example, `http://127.0.0.1:9473`) and choose **Connect to OpenMaskit**.
+Companion verifies `/health` and saves only the address in its own private state.
+It does not import, edit or replace your OpenMaskit database, rules, analyzers,
+settings, encryption keys or service configuration. Keep using the existing
+installation's service controls. Docker is not needed for this connection.
+
+Only HTTP/HTTPS loopback origins on this Mac are supported; credentials, URL
+paths, redirects and remote hosts are rejected. The existing service must expose
+OpenMaskit's current health response with a connected database. Failed MCPs can
+still be repaired through the dashboard. If OpenMaskit goes offline, the saved
+connection remains selected and the dashboard button is disabled until it is
+reachable again. Connecting or finishing setup never opens a browser automatically.
+
+Use **Settings → Installation** to change the address or installation, manage
+Companion-owned services, or configure pairing and the local connector.
+The main screen shows connection status and MCPs; setup is shown there only
+when no installation has completed configuration. Changing installations stops
+the app's local connector, keeps approved profiles and installation data, and
+leaves existing services running. Companion's local connector controls are
+currently available only for its managed installation.
+
+### Managed installation
+
+Choose **Companion installation** during onboarding or in Settings, then
+**Set Up and Start OpenMaskit**. Docker Desktop must be available. This single
+action prepares, starts and verifies all three services before completing setup.
+If interrupted, retry **Start and Finish Setup**; existing Companion project
+files, credentials, volumes and rules are reused. No other installation is adopted.
+
+For the CLI, use a tested immutable connector relay image digest:
+
 
 ```sh
-uv run openmaskit-companion setup --image ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:RELEASE_DIGEST
+uv run openmaskit-companion prepare-managed --image ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:RELEASE_DIGEST
 uv run openmaskit-companion start
 uv run openmaskit-companion pairing-code --name 'My computer'
 uv run openmaskit-companion pair
@@ -65,6 +97,14 @@ The pairing code is single-use and expires after two minutes. Stop with
 `openmaskit-companion stop`; data is retained. Existing managed installations
 keep their current project, volume, state and containers. Changing the relay
 image repository does not force a migration or recreate an existing stack.
+The older `setup` CLI command remains preparation-only for compatibility.
+
+To connect through the CLI instead:
+
+```sh
+uv run openmaskit-companion connect-existing --url http://127.0.0.1:9473
+uv run openmaskit-companion status
+```
 
 ## Approve a local MCP
 

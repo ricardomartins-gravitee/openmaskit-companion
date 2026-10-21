@@ -71,6 +71,32 @@ bypass OpenMaskit's privacy checks or connect AI clients directly to raw MCPs.
 
 ## Managed local installation
 
+### Installation selection and existing services
+
+`installation.json` under the private Companion state directory records the
+selected local origin, mode and completion state. It is an atomic, mode-0600
+pointer, not a copied OpenMaskit configuration. Existing managed state without
+this file is recognized in place. A legacy project that was only prepared and
+has no containers returns to onboarding; stopped or temporarily unavailable
+configured installations keep their selection.
+
+Existing mode performs read-only `GET /health` requests without proxy environment
+variables, redirects or credentials. Only HTTP/HTTPS loopback IPs or `localhost`
+are accepted. Responses have a size limit, timeouts and a schema check. A
+connected database is required; degraded MCPs do not prevent access to the
+dashboard for repair. Only readiness, aggregate health and a server count are
+returned to the UI. Target names and health error bodies are not exposed.
+
+Existing mode rejects managed service, relay administration, pairing and
+registration operations before Docker or credential access. It never opens the
+existing installation's files or writes its APIs. The dashboard opens only after
+a fresh successful health check; setup and attachment do not open it. Onboarding
+is for an unconfigured installation; service lifecycle and connection choices
+remain in Settings after setup. Switching stops only the app-owned host connector
+and preserves profiles, credentials and running services.
+
+### Dedicated project
+
 The manager controls only its dedicated
 `openmaskit-companion-<installation-id>` Compose project in the private
 companion state directory. It validates project names and never adopts, stops

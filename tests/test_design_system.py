@@ -75,9 +75,17 @@ def test_app_bundle_preserves_shared_library_attribution(tmp_path, monkeypatch):
     }
     for name, text in notices.items():
         (checkout / name).write_text(text)
+        (checkout / name).chmod(0o444)
     resources = tmp_path / "Contents/Resources"
     resources.mkdir(parents=True)
     bundle.copy_design_notices(resources)
     for name, text in notices.items():
         assert (resources / "ThirdParty/OpenMaskitDesign" / name).read_text() == text
+        # Exercise a rebuild over read-only notices produced by older bundles.
+        (resources / "ThirdParty/OpenMaskitDesign" / name).chmod(0o444)
+    bundle.copy_design_notices(resources)
+    for name, text in notices.items():
+        output = resources / "ThirdParty/OpenMaskitDesign" / name
+        assert output.read_text() == text
+        assert output.stat().st_mode & 0o200
     assert "copy_design_notices(resources)" in (ROOT / "scripts/bundle.py").read_text()

@@ -217,3 +217,72 @@ def test_backend_default_home_reads_existing_companion_profiles_only(tmp_path):
     assert json.loads(result.stdout) == {
         "profiles": [{"id": "existing", "name": "Existing Mac"}]
     }
+
+
+async def test_packaged_connection_preserves_settings_and_supports_offline_restart(
+    tmp_path,
+):
+    """An actual CLI process connects without creating a stack or mutating a store."""
+    import sqlite3
+
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    store = tmp_path / "existing-openmaskit.db"
+    with sqlite3.connect(store) as database:
+        database.executescript(
+            "CREATE TABLE rules (path TEXT, prefix TEXT); INSERT INTO rules VALUES ('messages.author','header'); CREATE TABLE settings (name TEXT,value TEXT); INSERT INTO settings VALUES ('analyzer','synthetic-presidio');"
+        )
+    before = store.read_bytes()
+    requests = []
+
+    async def health(request):
+        requests.append((request.method, request.url.path))
+        return JSONResponse(
+            {
+                "status": "healthy",
+                "database": {"connected": True},
+                "targets": [{"initialized": True}],
+            }
+        )
+
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    sock.listen()
+    address = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    server = uvicorn.Server(
+        uvicorn.Config(
+            Starlette(routes=[Route("/health", health)]),
+            access_log=False,
+            log_level="critical",
+        )
+    )
+    task = asyncio.create_task(server.serve(sockets=[sock]))
+    home = tmp_path / "viewer"
+    try:
+        async with asyncio.timeout(10):
+            while not server.started:
+                if task.done():
+                    await task
+                await asyncio.sleep(0.01)
+        connected = await asyncio.to_thread(
+            invoke, home, "connect-existing", "--url", address
+        )
+        assert connected["configured"]
+        state = await asyncio.to_thread(invoke, home, "status")
+        assert state["ready"] and state["mode"] == "existing"
+        assert not state["can_manage_services"]
+        assert (await asyncio.to_thread(invoke, home, "dashboard"))[
+            "dashboard"
+        ] == address
+        assert not (home / "stack").exists()
+        assert store.read_bytes() == before
+        assert all(item == ("GET", "/health") for item in requests)
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(task, 15)
+        sock.close()
+    state = await asyncio.to_thread(invoke, home, "status")
+    assert state["configured"] and not state["ready"] and state["dashboard"] == address
+    assert store.read_bytes() == before

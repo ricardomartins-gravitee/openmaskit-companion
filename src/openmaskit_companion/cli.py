@@ -10,7 +10,7 @@ from pathlib import Path
 
 from openmaskit_connector.state import identifier
 
-from . import __version__, manager
+from . import __version__, installation, manager
 
 
 def default_home():
@@ -25,6 +25,11 @@ def parser():
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="action", required=True)
     commands.add_parser("status")
+    commands.add_parser("dashboard")
+    attach = commands.add_parser("connect-existing")
+    attach.add_argument("--url", required=True)
+    prepare = commands.add_parser("prepare-managed")
+    prepare.add_argument("--image", required=True)
     setup = commands.add_parser("setup")
     setup.add_argument(
         "--image",
@@ -74,17 +79,39 @@ def main(argv=None):
     if args.action in {"pair", "approve", "forget", "profiles", "connect"}:
         from openmaskit_connector.cli import main as connector_main
 
+        if args.action in {"pair", "connect"}:
+            try:
+                installation.require_managed(home)
+            except installation.InstallationError as error:
+                print(
+                    json.dumps({"error": str(error), "code": error.code}),
+                    file=sys.stderr,
+                )
+                raise SystemExit(1) from None
         supplied = list(sys.argv[1:] if argv is None else argv)
         connector_main(["--home", str(home), *supplied])
         return
     try:
         if args.action == "status":
             result = manager.status(home)
+        elif args.action == "connect-existing":
+            result = installation.connect_existing(home, args.url)
+        elif args.action == "dashboard":
+            selected = installation.selection(home)
+            if selected["mode"] == "managed":
+                result = manager.status(home)
+                if not result["configured"] or not result["ready"]:
+                    raise installation.InstallationError("unavailable")
+            else:
+                result = installation.dashboard(home)
+        elif args.action == "prepare-managed":
+            result = manager.prepare_managed(home, args.image)
         elif args.action == "setup":
+            installation.require_managed(home)
             result = manager.initialize(home, args.image)
         elif args.action == "start":
             manager.compose(home, "up", "--detach", "--wait", "--wait-timeout", "300")
-            result = manager.status(home)
+            result = manager.finish_start(home)
         elif args.action == "stop":
             manager.compose(home, "stop", "--timeout", "45")
             result = manager.status(home)
@@ -103,6 +130,9 @@ def main(argv=None):
         pass
     except asyncio.CancelledError:
         pass
+    except installation.InstallationError as error:
+        print(json.dumps({"error": str(error), "code": error.code}), file=sys.stderr)
+        raise SystemExit(1) from None
     except Exception:
         # Do not expose server error bodies, command arguments or local secrets.
         print(

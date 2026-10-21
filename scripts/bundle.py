@@ -23,7 +23,12 @@ def copy_design_notices(resources):
     destination = resources / "ThirdParty/OpenMaskitDesign"
     destination.mkdir(parents=True, exist_ok=True)
     for name in ("LICENSE", "NOTICE", "TRADEMARKS.md"):
-        shutil.copy2(checkout / name, destination / name)
+        output = destination / name
+        # SwiftPM checkouts can be read-only. Keep generated notices replaceable
+        # so rebuilding an existing development bundle remains safe and repeatable.
+        if output.exists():
+            output.chmod(0o644)
+        shutil.copyfile(checkout / name, output)
 
 
 def write_info_plist(app):
@@ -51,7 +56,14 @@ def main():
     parser.add_argument(
         "--image", help="Published connector relay image pinned by digest"
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=ROOT / "dist",
+        help="Output directory for an isolated review build",
+    )
     args = parser.parse_args()
+    destination = args.output_dir.resolve()
     entry = ROOT / ".runtime/bundle-entry.py"
     entry.parent.mkdir(exist_ok=True)
     entry.write_text("from openmaskit_companion.cli import main\nmain()\n")
@@ -63,6 +75,8 @@ def main():
             "--noconfirm",
             "--clean",
             "--onedir",
+            "--distpath",
+            str(destination),
             "--name",
             "openmaskit-companion",
             "--collect-all",
@@ -89,7 +103,7 @@ def main():
         ],
         check=True,
     )
-    app = ROOT / "dist/OpenMaskit Companion.app/Contents"
+    app = destination / "OpenMaskit Companion.app/Contents"
     (app / "MacOS").mkdir(parents=True, exist_ok=True)
     resources = app / "Resources"
     resources.mkdir(exist_ok=True)
@@ -99,7 +113,7 @@ def main():
         app / "MacOS/OpenMaskitCompanion",
     )
     shutil.copytree(
-        ROOT / "dist/openmaskit-companion",
+        destination / "openmaskit-companion",
         resources / "backend/openmaskit-companion",
         dirs_exist_ok=True,
     )

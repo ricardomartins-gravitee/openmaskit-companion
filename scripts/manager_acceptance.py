@@ -14,6 +14,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from openmaskit_connector.state import read_json, write_json
@@ -38,14 +39,14 @@ def main(image, candidate_image=None):
         home = Path(directory)
         connector = None
 
-        def cli(*arguments, text=None):
+        def cli(*arguments, text=None, at=None):
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
                     "openmaskit_companion.cli",
                     "--home",
-                    str(home),
+                    str(at or home),
                     *arguments,
                 ],
                 input=text,
@@ -60,7 +61,8 @@ def main(image, candidate_image=None):
             return json.loads(result.stdout)
 
         try:
-            assert cli("setup", "--image", image)["initialized"]
+            assert cli("prepare-managed", "--image", image)["initialized"]
+            assert not cli("status")["configured"]
             if candidate_image is not None:
                 # This isolated synthetic fixture tests an unpublished relay candidate.
                 # Production setup still rejects mutable/unapproved image references.
@@ -128,6 +130,49 @@ def main(image, candidate_image=None):
             assert cli("register", "fixture", "--name", "Synthetic fixture")[
                 "connected"
             ], "Registration retry must be idempotent"
+            # Connect a second, independent Companion home as a read-only viewer.
+            # Seed real rules/settings in the synthetic server and compare them after attach.
+            with httpx.Client(base_url=manager.WEB, trust_env=False, timeout=10) as api:
+                csrf = api.get("/api/csrf").json()["token"]
+                headers = {"Origin": manager.WEB, "X-CSRF-Token": csrf}
+                api.post(
+                    "/api/targets/synthetic-fixture/rules/create",
+                    headers=headers,
+                    json={
+                        "tool_name": "*",
+                        "field_path": "messages.author",
+                        "alias_prefix": "header",
+                    },
+                ).raise_for_status()
+                api.post(
+                    "/api/privacy/providers/create",
+                    headers=headers,
+                    json={
+                        "name": "Synthetic analyzer",
+                        "endpoint": "http://presidio-analyzer:3000",
+                    },
+                ).raise_for_status()
+                rules_before = api.get("/api/targets/synthetic-fixture/rules").json()
+                settings_before = api.get("/api/privacy").json()
+                viewer = home / "viewer"
+                assert cli("connect-existing", "--url", manager.WEB, at=viewer)[
+                    "configured"
+                ]
+                viewed = cli("status", at=viewer)
+                assert viewed["ready"] and viewed["mode"] == "existing"
+                assert (
+                    not viewed["can_manage_services"]
+                    and not (viewer / "stack").exists()
+                )
+                assert cli("dashboard", at=viewer)["dashboard"] == manager.WEB
+                assert (
+                    api.get("/api/targets/synthetic-fixture/rules").json()
+                    == rules_before
+                )
+                assert api.get("/api/privacy").json() == settings_before
+            assert cli("status")["ready"], (
+                "Attaching must leave the original managed services running"
+            )
             settings = read_json(home / "stack/relay/relay.json")
             paired = read_json(home / "connection.json")
             status = json.dumps(cli("status"))
@@ -160,7 +205,7 @@ def main(image, candidate_image=None):
                 "PASS: actual manager CLI setup/start/pair/approve/connect/register/status/stop,"
             )
             print(
-                "idempotent registration, private status, isolated project and live host MCP round trip."
+                "idempotent registration, read-only attach preserving rules/settings, private status, isolated project and live host MCP round trip."
             )
         finally:
             if connector is not None and connector.poll() is None:

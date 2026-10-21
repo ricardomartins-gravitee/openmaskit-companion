@@ -1,34 +1,9 @@
 import AppKit
 import CompanionDesktopCore
+import CompanionPolicy
 import SwiftUI
 
-struct Service: Codable, Identifiable {
-  var id: String { name }
-  let name: String
-  let state: String
-  let health: String
-  var title: String {
-    switch name {
-    case "openmaskit": return "OpenMaskit"
-    case "presidio-analyzer": return "Presidio"
-    default: return "Local MCP connection"
-    }
-  }
-}
-
-struct Installation: Codable {
-  var initialized = false
-  var paired = false
-  var services: [Service] = []
-  var connectors: [ConnectorState]?
-  var error: String?
-}
-
-struct ConnectorState: Codable, Identifiable {
-  let id: String
-  let name: String
-  let connected: Bool
-}
+typealias Installation = InstallationState
 
 struct LocalProfile: Codable, Identifiable {
   let id: String
@@ -39,6 +14,10 @@ struct LocalProfile: Codable, Identifiable {
   @Published var installation = Installation()
   @Published var profiles: [LocalProfile] = []
   @Published var busy = false
+  @Published var hasLoaded = false
+  @Published var progress = ""
+  private var refreshing = false
+  private var configurationGeneration = 0
   @Published var message = ""
   @Published var connectorRunning = false
   private var connector: Process?
@@ -95,11 +74,19 @@ struct LocalProfile: Codable, Identifiable {
       try? incoming.fileHandleForWriting.close()
       process.waitUntilExit()
       guard process.terminationStatus == 0 else {
+        let failure =
+          try? JSONSerialization.jsonObject(
+            with: errors.fileHandleForReading.readDataToEndOfFile()) as? [String: String]
+        let safeCodes = [
+          "invalid_url", "unavailable", "not_openmaskit", "database_unavailable",
+          "invalid_selection", "external_installation", "not_configured", "docker_unavailable",
+        ]
+        let detail = failure.flatMap { safeCodes.contains($0["code"] ?? "") ? $0["error"] : nil }
         throw NSError(
           domain: "Companion", code: 1,
           userInfo: [
-            NSLocalizedDescriptionKey:
-              "The action could not finish. Check Docker Desktop, pairing and your local MCP settings."
+            NSLocalizedDescriptionKey: detail
+              ?? "The action could not finish. Check Docker Desktop, pairing and your local MCP settings."
           ])
       }
       return output.fileHandleForReading.readDataToEndOfFile()
@@ -107,29 +94,123 @@ struct LocalProfile: Codable, Identifiable {
   }
 
   func refresh() async {
-    guard !busy else { return }
+    guard !busy && !refreshing else { return }
+    refreshing = true
+    defer { refreshing = false }
+    let generation = configurationGeneration
     do {
-      installation = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
+      let state = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
       let data = try await invoke(["profiles"])
       struct ProfileList: Codable { let profiles: [LocalProfile] }
-      profiles = try JSONDecoder().decode(ProfileList.self, from: data).profiles
+      let list = try JSONDecoder().decode(ProfileList.self, from: data)
+      guard generation == configurationGeneration && !busy else { return }
+      installation = state
+      profiles = list.profiles
+      hasLoaded = true
+    } catch {
+      guard generation == configurationGeneration && !busy else { return }
+      installation.ready = false
+      message = error.localizedDescription
+    }
+  }
+
+  func connectExisting(_ address: String) async {
+    guard !busy else { return }
+    busy = true
+    configurationGeneration += 1
+    progress = "Checking your existing OpenMaskit installation…"
+    message = ""
+    defer {
+      busy = false
+      progress = ""
+    }
+    do {
+      _ = try await invoke(["connect-existing", "--url", address])
+      stopConnector()
+      installation = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
+      hasLoaded = true
+      message = "Connected. Your existing rules and settings stay in OpenMaskit."
     } catch { message = error.localizedDescription }
+  }
+
+  func configureManaged() async {
+    guard !busy else { return }
+    guard let image = releaseImage else {
+      message = "This development build needs a verified service release."
+      return
+    }
+    busy = true
+    configurationGeneration += 1
+    progress = "Checking Docker and preparing your installation…"
+    message = ""
+    defer {
+      busy = false
+      progress = ""
+    }
+    do {
+      _ = try await invoke(["prepare-managed", "--image", image])
+      stopConnector()
+      progress = "Downloading and starting services. The first download can take several minutes…"
+      installation = try JSONDecoder().decode(Installation.self, from: await invoke(["start"]))
+      hasLoaded = true
+      message =
+        installation.canOpenDashboard
+        ? "OpenMaskit is ready." : "Services are not ready yet. Retry setup in Settings."
+    } catch {
+      message = error.localizedDescription
+      if let data = try? await invoke(["status"]),
+        let state = try? JSONDecoder().decode(Installation.self, from: data)
+      {
+        installation = state
+        hasLoaded = true
+      }
+    }
+  }
+
+  func openDashboard() async {
+    guard !busy && installation.canOpenDashboard else { return }
+    busy = true
+    configurationGeneration += 1
+    progress = "Checking OpenMaskit…"
+    defer {
+      busy = false
+      progress = ""
+    }
+    do {
+      struct Dashboard: Decodable {
+        let dashboard: String
+        let ready: Bool
+      }
+      let response = try JSONDecoder().decode(Dashboard.self, from: await invoke(["dashboard"]))
+      guard response.ready, let url = Installation.localDashboardURL(response.dashboard) else {
+        return
+      }
+      NSWorkspace.shared.open(url)
+    } catch {
+      installation.ready = false
+      message = error.localizedDescription
+    }
   }
 
   func action(_ arguments: [String], success: String) async {
     guard !busy else { return }
     busy = true
+    configurationGeneration += 1
+    message = ""
     defer { busy = false }
     do {
       _ = try await invoke(arguments)
-      message = success
       installation = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
+      message =
+        arguments.first == "start" && !installation.ready
+        ? "Services need attention. Check their status in Settings." : success
     } catch { message = error.localizedDescription }
   }
 
   func pair() async {
     guard !busy else { return }
     busy = true
+    configurationGeneration += 1
     defer { busy = false }
     do {
       struct Pairing: Codable { let code: String }
@@ -243,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     .windowResizability(.contentSize)
-    Settings { SettingsScreen(preferences: preferences) }
+    Settings { SettingsScreen(model: model, preferences: preferences) }
     MenuBarExtra(
       "OpenMaskit Companion", systemImage: "link",
       isInserted: Binding(

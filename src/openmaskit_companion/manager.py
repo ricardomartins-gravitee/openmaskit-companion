@@ -16,6 +16,8 @@ from pathlib import Path
 import httpx
 from openmaskit_connector.state import private_dir, read_json, write_json
 
+from . import installation
+
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
 RELAY = "http://127.0.0.1:9495"
@@ -111,6 +113,7 @@ def initialize(home: Path, image: str):
 
 
 def compose(home: Path, *arguments, timeout=360):
+    installation.require_managed(home)
     stack = home / "stack"
     marker = read_json(stack / "managed.json")
     project = marker.get("project")
@@ -177,13 +180,26 @@ def compose(home: Path, *arguments, timeout=360):
 
 
 def status(home: Path):
+    selected = installation.selection(home)
     result = {
+        **selected,
+        "ready": False,
+        "server_count": 0,
+        "health": "offline",
+        "can_manage_services": selected["mode"] == "managed",
         "initialized": (home / "stack/managed.json").is_file(),
-        "dashboard": WEB,
         "services": [],
         "paired": (home / "connection.json").is_file(),
         "automatic_updates": False,
     }
+    if selected["mode"] == "existing":
+        result["paired"] = False
+        result["connectors"] = []
+        try:
+            result.update(installation.probe(selected["dashboard"]))
+        except installation.InstallationError as error:
+            result["error"] = str(error)
+        return result
     try:
         if result["initialized"]:
             raw = compose(home, "ps", "--all", "--format", "json", timeout=10)
@@ -192,6 +208,8 @@ def status(home: Path):
                 if raw.lstrip().startswith("[")
                 else [json.loads(line) for line in raw.splitlines() if line]
             )
+            if not data and not (home / "installation.json").exists():
+                result["configured"] = False
             result["services"] = [
                 {
                     "name": row["Service"],
@@ -214,10 +232,58 @@ def status(home: Path):
             ]
         except (ValueError, httpx.HTTPError):
             result["connectors"] = []
+    if selected["mode"] == "managed" and any(
+        row["name"] == "openmaskit" and row["state"] == "running"
+        for row in result["services"]
+    ):
+        try:
+            result.update(installation.probe(selected["dashboard"]))
+        except installation.InstallationError as error:
+            result["connection_error"] = str(error)
+    return result
+
+
+def prepare_managed(home, image):
+    if (home / "stack").is_symlink() or (home / "stack/managed.json").is_symlink():
+        raise installation.InstallationError("invalid_selection")
+    image_digest(image)
+    try:
+        local_docker(docker_binary(), os.environ)
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        raise installation.InstallationError("docker_unavailable") from None
+    if not (home / "stack/managed.json").exists():
+        initialize(home, image)
+    else:
+        marker = read_json(home / "stack/managed.json")
+        project = marker.get("project", "")
+        if (
+            marker.get("schema") != 1
+            or not isinstance(project, str)
+            or re.fullmatch(re.escape(PROJECT) + r"(?:-[0-9a-f]{12})?", project) is None
+        ):
+            raise ValueError("Invalid Companion installation marker")
+    installation.save(home, "managed", WEB, configured=False)
+    return {"dashboard": WEB, "initialized": True}
+
+
+def finish_start(home):
+    result = status(home)
+    if result.get("ready") and all(
+        any(
+            row["name"] == name
+            and row["state"] == "running"
+            and row["health"] == "healthy"
+            for row in result["services"]
+        )
+        for name in ("openmaskit", "presidio-analyzer", "connector-relay")
+    ):
+        installation.save(home, "managed", WEB)
+        result["configured"] = True
     return result
 
 
 def admin(home: Path, method, path, body=None):
+    installation.require_managed(home)
     settings = read_json(home / "stack/relay/relay.json")
     with httpx.Client(
         base_url=RELAY,
@@ -231,6 +297,7 @@ def admin(home: Path, method, path, body=None):
 
 
 def register_target(home: Path, profile: str, name: str):
+    installation.require_managed(home)
     from openmaskit_connector.state import identifier
 
     config = read_json(home / "connection.json")

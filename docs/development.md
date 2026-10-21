@@ -39,6 +39,23 @@ project, relay pairing and registration integration, status redaction, and
 native UI behavior. The container acceptance stack is disposable and must not
 adopt or modify an existing user project or mailbox data.
 
+Installation tests exercise both first-run choices, failed connection attempts,
+offline restart, pending setup and legacy state. They compare synthetic database,
+rules, analyzer settings, keys and managed files before and after attachment,
+and assert that existing mode cannot run service or relay administration commands.
+The packaged backend contract repeats attachment and offline restart in real
+processes. The Docker manager acceptance test seeds real rules and analyzer
+settings in its disposable OpenMaskit stack, attaches a second Companion home,
+and verifies that the settings and original managed connection are preserved.
+Native policy tests cover onboarding and dashboard readiness independently of
+XCTest; hosted XCTest runs the same installation state contract.
+
+To keep a review build separate from an installed app, use
+`scripts/bundle.py --output-dir .runtime/review-dist` (with the verified relay
+image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and
+synthetic health endpoint. Do not attach or change the user's installation as a
+side effect of running tests.
+
 The macOS tests cover preference persistence and menu-bar behavior: independent
 settings, closing the window while preserving intended background operation,
 showing the window from the menu or Dock, and connector termination on Quit.
