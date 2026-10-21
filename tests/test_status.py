@@ -1,7 +1,8 @@
 import json
 
+from openmaskit_connector.state import write_json
+
 from openmaskit_companion import manager
-from openmaskit_companion.state import write_json
 
 
 def managed_home(tmp_path):

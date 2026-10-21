@@ -27,7 +27,6 @@ jobs:
             "$archive" | sha256sum --check --status
           tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
           "$RUNNER_TEMP/actionlint"
-          shellcheck scripts/build_intel_dependencies.sh
 
   python:
     name: Python quality and coverage
@@ -38,7 +37,14 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.1'
-      - run: uv sync --frozen --no-build --python 3.12 --group dev
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ricardomartins-gravitee/openmaskit-connector
+          ref: 2cb467101036faf4141c44074fcc3c8e0b03d100
+          path: .runtime/connector-source
+      - run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package openmaskit-connector
+      - name: Install the reviewed connector source from its verified wheel
+        run: uv run --frozen --no-sync --no-build python scripts/install_connector.py
       - name: Lint Python source, scripts and tests
         run: uv run --frozen --no-sync --no-build ruff check src scripts tests
       - name: Check Python formatting
@@ -48,7 +54,7 @@ jobs:
       - name: Enforce coverage threshold including branches
         run: uv run --frozen --no-sync --no-build pytest -q --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
       - name: Export all locked dependencies for auditing
-        run: uv export --frozen --all-groups --no-emit-project --format requirements-txt > requirements-audit.txt
+        run: uv export --frozen --all-groups --no-emit-project --no-emit-package openmaskit-connector --format requirements-txt > requirements-audit.txt
       - name: Audit locked runtime and development dependencies
         run: uv run --frozen --no-sync --no-build pip-audit --disable-pip --require-hashes --strict --requirement requirements-audit.txt --format json --output pip-audit.json
       - name: Retain quality and coverage reports

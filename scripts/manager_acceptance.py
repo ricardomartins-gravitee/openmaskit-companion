@@ -16,14 +16,14 @@ from pathlib import Path
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from openmaskit_connector.state import read_json, write_json
 
 from openmaskit_companion import manager
-from openmaskit_companion.state import read_json, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main(image):
+def main(image, candidate_image=None):
     # Fixed product ports must be free; the acceptance never displaces a service.
     for port in (9493, 9494, 9495):
         with socket.socket() as probe:
@@ -58,6 +58,20 @@ def main(image):
 
         try:
             assert cli("setup", "--image", image)["initialized"]
+            if candidate_image is not None:
+                # This isolated synthetic fixture tests an unpublished relay candidate.
+                # Production setup still rejects mutable/unapproved image references.
+                env_file = home / "stack/.env"
+                entries = env_file.read_text().splitlines()
+                env_file.write_text(
+                    "\n".join(
+                        "COMPANION_IMAGE=" + candidate_image
+                        if line.startswith("COMPANION_IMAGE=")
+                        else line
+                        for line in entries
+                    )
+                    + "\n"
+                )
             marker = read_json(home / "stack/managed.json")
             assert marker["project"].startswith(manager.PROJECT + "-")
             status = cli("start")
@@ -160,5 +174,12 @@ def main(image):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", required=True)
-    main(parser.parse_args().image)
+    parser.add_argument("--image")
+    parser.add_argument(
+        "--candidate-image",
+        help="Unpublished image used only in the disposable test stack",
+    )
+    args = parser.parse_args()
+    if not args.image and not args.candidate_image:
+        parser.error("--image or --candidate-image is required")
+    main(args.image or manager.IMAGE_PREFIX + "0" * 64, args.candidate_image)

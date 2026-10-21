@@ -1,22 +1,23 @@
-"""Development downloads; checksums do not claim platform code signing."""
+"""Archive the tested macOS app and write its SHA-256 checksum."""
 
 import hashlib
 import platform
-import shutil
 import subprocess
 from pathlib import Path
 
-root = Path(__file__).resolve().parents[1]
-downloads = root / "dist/downloads"
-downloads.mkdir(exist_ok=True)
-label = platform.system().lower() + "-" + platform.machine().lower()
-shutil.make_archive(
-    str(downloads / ("openmaskit-companion-cli-" + label)),
-    "zip",
-    root / "dist",
-    "openmaskit-companion",
-)
-if platform.system() == "Darwin":
+ROOT = Path(__file__).resolve().parents[1]
+APP = ROOT / "dist/OpenMaskit Companion.app"
+
+
+def main():
+    if platform.system() != "Darwin":
+        raise RuntimeError("The companion app archive can only be made on macOS")
+    if not APP.is_dir():
+        raise FileNotFoundError("The tested companion app bundle is missing")
+    downloads = ROOT / "dist/downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    label = platform.machine().lower()
+    archive = downloads / f"openmaskit-companion-macos-{label}.zip"
     subprocess.run(
         [
             "ditto",
@@ -24,15 +25,14 @@ if platform.system() == "Darwin":
             "-k",
             "--sequesterRsrc",
             "--keepParent",
-            str(root / "dist/OpenMaskit Companion.app"),
-            str(downloads / ("openmaskit-companion-development-" + label + ".zip")),
+            str(APP),
+            str(archive),
         ],
         check=True,
     )
-checksums = {
-    path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-    for path in downloads.glob("*.zip")
-}
-(downloads / "SHA256SUMS.txt").write_text(
-    "".join(f"{value}  {key}\n" for key, value in sorted(checksums.items()))
-)
+    checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+    (downloads / "SHA256SUMS.txt").write_text(f"{checksum}  {archive.name}\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -2,9 +2,9 @@ from unittest.mock import patch
 
 import pytest
 import respx
+from openmaskit_connector.state import write_json
 
 from openmaskit_companion import manager
-from openmaskit_companion.state import write_json
 
 
 @pytest.fixture

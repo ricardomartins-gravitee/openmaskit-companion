@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 import yaml
@@ -18,19 +19,32 @@ def workflow(name):
     )
 
 
-def test_security_and_quality_are_required_before_publishing():
+CONNECTOR_REPOSITORY = "ricardomartins-gravitee/openmaskit-connector"
+CONNECTOR_PIN = "2cb467101036faf4141c44074fcc3c8e0b03d100"
+
+
+def test_quality_and_security_gate_all_companion_checks_and_packaging():
     jobs = workflow("validate.yml")["jobs"]
-    assert set(jobs["image"]["needs"]) == {"quality", "security"}
-    assert set(jobs["publish"]["needs"]) == {
-        "test",
-        "image",
-        "quality",
-        "security",
-        "intel-wheel",
-    }
     for name in ("quality", "security"):
         assert jobs[name]["uses"] == f"./.github/workflows/{name}.yml"
         assert "workflow_call" in workflow(f"{name}.yml")["on"]
+    assert set(jobs["intel-wheel"]["needs"]) == {"quality", "security"}
+    assert set(jobs["integration"]["needs"]) == {"quality", "security"}
+    assert set(jobs["test"]["needs"]) == {"intel-wheel", "integration"}
+    assert set(jobs["release-metadata"]["needs"]) == {
+        "test",
+        "integration",
+        "quality",
+        "security",
+    }
+    assert set(jobs["package"]["needs"]) == {
+        "test",
+        "intel-wheel",
+        "release-metadata",
+    }
+    assert (
+        "publish" not in jobs and "image" not in jobs and "native-release" not in jobs
+    )
 
 
 def test_workflows_pin_external_actions_and_do_not_ignore_failures():
@@ -43,9 +57,17 @@ def test_workflows_pin_external_actions_and_do_not_ignore_failures():
                 assert step.get("continue-on-error", "false") == "false"
                 if "uses" in step:
                     assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", step["uses"])
+    assert re.fullmatch("[0-9a-f]{40}", CONNECTOR_PIN)
+    quality_workflow = workflow("quality.yml")
+    quality_commands = "\n".join(
+        step.get("run", "")
+        for job in quality_workflow["jobs"].values()
+        for step in job.get("steps", [])
+    )
+    assert "shellcheck scripts/build_intel_dependencies.sh" not in quality_commands
 
 
-def test_coverage_gate_includes_all_production_code_and_branches():
+def test_coverage_gate_includes_all_companion_code_and_branches():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["coverage"]
     assert config["run"]["branch"] is True
     assert config["run"]["source"] == ["src/openmaskit_companion"]
@@ -53,8 +75,8 @@ def test_coverage_gate_includes_all_production_code_and_branches():
     assert "omit" not in config["run"]
 
 
-def test_ci_disallows_dependency_source_builds_and_implicit_resynchronization():
-    for name in ("validate.yml", "quality.yml", "intel-wheel.yml"):
+def test_ci_uses_locked_dependencies_without_implicit_resynchronization():
+    for name in ("validate.yml", "quality.yml"):
         for job in workflow(name)["jobs"].values():
             for step in job.get("steps", []):
                 for command in re.findall(
@@ -65,77 +87,183 @@ def test_ci_disallows_dependency_source_builds_and_implicit_resynchronization():
                     if command.startswith("uv run"):
                         assert "--no-sync" in command
                         assert "--no-build" in command
-    assert "uv sync --frozen --no-build" in (ROOT / "Dockerfile").read_text()
+                    if command.startswith("uv sync"):
+                        assert "--no-install-package openmaskit-connector" in command
 
 
-def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run():
+def test_connector_source_and_intel_wheel_are_pinned_to_the_same_commit():
+    pin = json.loads((ROOT / "dependencies/connector.json").read_text())
+    commit = pin["commit"]
+    assert commit == CONNECTOR_PIN
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    assert "openmaskit-connector==0.1.0a1" in pyproject["project"]["dependencies"]
+    source = pyproject["tool"]["uv"]["sources"]["openmaskit-connector"]
+    assert source["rev"] == commit
     jobs = workflow("validate.yml")["jobs"]
-    assert set(jobs["intel-wheel"]["needs"]) == {"quality", "security"}
-    assert jobs["intel-wheel"]["uses"] == "./.github/workflows/intel-wheel.yml"
-    assert jobs["test"]["needs"] == "intel-wheel"
-    test_commands = "\n".join(s.get("run", "") for s in jobs["test"]["steps"])
-    assert "scripts/bundle.py" in test_commands
-    assert "scripts/test_bundle.py" in test_commands
-    builder = workflow("intel-wheel.yml")["jobs"]["wheel"]
-    assert builder["runs-on"] == "macos-15-intel"
-    assert builder["env"]["OPENSSL_STATIC"] == "1"
-    steps = builder["steps"]
-    commands = "\n".join(step.get("run", "") for step in steps)
-    assert "--only-group intel-build" in commands
-    recipe = (ROOT / "scripts/build_intel_dependencies.sh").read_text()
-    assert "uv build" in recipe and "--no-build-isolation" in recipe
-    assert "scripts/intel_wheel.py fetch" in commands
-    assert "scripts/intel_wheel.py fetch-openssl" in commands
-    assert "./Configure darwin64-x86_64-cc no-shared no-module" in recipe
-    assert "HARNESS_JOBS=3 make test" in recipe
-    assert "brew" not in commands
-    assert "scripts/intel_wheel.py seal" in commands
-    assert "scripts/test_crypto.py" in commands
-    assert "scripts/intel_wheel.py sbom" in commands
-    assert "--fail-on high" in commands
-    assert "grype-report.json" in commands
-    builds = [
+    assert jobs["intel-wheel"]["uses"] == (
+        f"{CONNECTOR_REPOSITORY}/.github/workflows/intel-wheel.yml@{commit}"
+    )
+    assert jobs["intel-wheel"]["with"]["source-ref"] == commit
+    assert jobs["intel-wheel"]["permissions"] == {
+        "contents": "read",
+        "attestations": "read",
+        "actions": "read",
+    }
+    jobs_to_check = {
+        "quality": workflow("quality.yml")["jobs"]["python"],
+        **{name: jobs[name] for name in ("integration", "test", "package")},
+    }
+    for job in jobs_to_check.values():
+        checkouts = [
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/checkout@")
+            and step.get("with", {}).get("repository") == CONNECTOR_REPOSITORY
+        ]
+        assert len(checkouts) == 1
+        assert checkouts[0]["with"]["ref"] == commit
+        assert checkouts[0]["with"]["path"] == ".runtime/connector-source"
+        commands = [step.get("run", "") for step in job["steps"]]
+        installer = next(
+            index
+            for index, command in enumerate(commands)
+            if "scripts/install_connector.py" in command
+        )
+        checkout = next(
+            index for index, step in enumerate(job["steps"]) if step in checkouts
+        )
+        assert checkout < installer
+
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    locked_connector = next(
+        package
+        for package in lock["package"]
+        if package["name"] == "openmaskit-connector"
+    )
+    assert locked_connector["version"] == "0.1.0a1"
+    locked_git = locked_connector["source"]["git"]
+    parsed_git = urlsplit(locked_git)
+    assert parsed_git.scheme == "https"
+    assert parsed_git.netloc == "github.com"
+    assert parsed_git.path == "/ricardomartins-gravitee/openmaskit-connector.git"
+    assert dict(parse_qsl(parsed_git.query)) == {"rev": commit}
+    assert parsed_git.fragment == commit
+    assert locked_git.startswith(source["git"] + "?")
+
+
+def test_dependency_audit_excludes_only_connector_source_and_keeps_its_libraries():
+    quality = workflow("quality.yml")
+    export = next(
         step
-        for step in steps
-        if step.get("run") == "bash scripts/build_intel_dependencies.sh"
-    ]
-    assert len(builds) == 1
-    assert builds[0]["if"] == "steps.restore.outputs.reused != 'true'"
+        for job in quality["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("name") == "Export all locked dependencies for auditing"
+    )
+    omitted = re.findall(r"--no-emit-package(?:=|\s+)(\S+)", export["run"])
+    assert omitted == ["openmaskit-connector"]
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    package = next(
+        item for item in lock["package"] if item["name"] == "openmaskit-connector"
+    )
+    transitive = {dependency["name"] for dependency in package.get("dependencies", [])}
+    assert transitive
+    assert transitive.isdisjoint(omitted)
+
+
+def test_connector_wheel_is_verified_before_installing_on_intel():
+    jobs = workflow("validate.yml")["jobs"]
+    test = jobs["test"]
+    assert set(test["strategy"]["matrix"]["os"]) == {"macos-26", "macos-15-intel"}
+    steps = test["steps"]
+    downloads = [step for step in steps if "download-artifact@" in step.get("uses", "")]
+    assert len(downloads) == 1
+    assert downloads[0]["if"] == "matrix.os == 'macos-15-intel'"
+    assert downloads[0]["with"]["name"] == "intel-cryptography-wheel"
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert "--group intel-build" not in commands
+    assert "--no-install-package cryptography" in commands
+    assert ".runtime/connector-source/scripts/intel_wheel.py prepare" in commands
+    assert ".runtime/connector-source/scripts/test_crypto.py" in commands
     for step in steps:
-        if (
-            "trivy-action@" in step.get("uses", "")
-            or "scripts/test_crypto.py" in step.get("run", "")
-            or "--fail-on high" in step.get("run", "")
-        ):
-            assert "if" not in step
-    scans = [step["with"] for step in steps if "trivy-action@" in step.get("uses", "")]
-    assert {scan["scan-type"] for scan in scans} == {"fs", "sbom"}
-    for scan in scans:
-        assert scan["scanners"] == "vuln"
-        assert scan["exit-code"] == "1"
-        assert scan["ignore-unfixed"] == "false"
-        assert scan["severity"] == "HIGH,CRITICAL"
-    for name in ("test", "package"):
-        steps = jobs[name]["steps"]
-        downloads = [s for s in steps if "download-artifact@" in s.get("uses", "")]
-        assert len(downloads) == 1
-        assert downloads[0]["if"] == "matrix.os == 'macos-15-intel'"
-        assert downloads[0]["with"]["name"] == "intel-cryptography-wheel"
-        assert "run-id" not in downloads[0]["with"]
-        commands = "\n".join(step.get("run", "") for step in steps)
-        assert "--no-install-package cryptography" in commands
-        assert "scripts/intel_wheel.py prepare" in commands
-        assert "scripts/test_crypto.py" in commands
-    for job in [builder, jobs["test"], jobs["package"]]:
-        for step in job["steps"]:
-            for command in re.findall(r"\buv pip install\b[^\n]*", step.get("run", "")):
-                assert "--no-build" in command
-                assert "--no-deps" in command
-                assert "--require-hashes" in command
+        for command in re.findall(r"\buv pip install\b[^\n]*", step.get("run", "")):
+            assert "--no-build" in command
+            assert "--no-deps" in command
+            assert "--require-hashes" in command
+
+
+def test_companion_app_is_built_and_exercised_on_both_macos_architectures():
+    jobs = workflow("validate.yml")["jobs"]
+    steps = jobs["test"]["steps"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert "swift format lint --strict" in commands
+    assert "swift test --package-path desktop/macos" in commands
+    assert "scripts/bundle.py" in commands
+    assert "scripts/test_bundle.py" in commands
+    assert "connector-source/scripts/test_crypto.py" in commands
+    assert "scripts/manager_acceptance.py" not in commands
+    assert "--image" not in commands
+    assert not any("archive.py" in step.get("run", "") for step in steps)
+    bundle_test = (ROOT / "scripts/test_bundle.py").read_text()
+    assert (
+        "Contents/Resources/backend/openmaskit-companion/openmaskit-companion"
+        in bundle_test
+    )
+    assert "tests/test_app_contract.py" in bundle_test
+    assert '"COMPANION_BINARY"' in bundle_test
+
+
+def test_local_candidate_relay_acceptance_is_isolated_and_does_not_publish_an_image():
+    jobs = workflow("validate.yml")["jobs"]
+    integration = jobs["integration"]
+    assert integration["runs-on"] == "ubuntu-24.04"
+    commands = "\n".join(step.get("run", "") for step in integration["steps"])
+    assert ".runtime/connector-source" in commands
+    assert "docker buildx build" in commands
+    assert "openmaskit-connector:candidate" in commands
+    assert "manager_acceptance.py --candidate-image" in commands
+    assert "gh release" not in commands
+    assert "docker push" not in commands
+
+
+def test_mac_app_archives_are_main_only_attested_and_have_checksums():
+    jobs = workflow("validate.yml")["jobs"]
+    release = jobs["release-metadata"]
+    assert "refs/heads/main" in release["if"]
+    assert "event_name != 'pull_request'" in release["if"]
+    assert (
+        release["outputs"]["relay-image"] == "${{ steps.release.outputs.relay-image }}"
+    )
+    release_commands = "\n".join(step.get("run", "") for step in release["steps"])
+    assert "scripts/connector_release.py" in release_commands
+    assert "GH_TOKEN" in "\n".join(
+        str(step.get("env", {})) for step in release["steps"]
+    )
+    package = jobs["package"]
+    assert "refs/heads/main" in package["if"]
+    assert "event_name != 'pull_request'" in package["if"]
+    assert package["permissions"]["id-token"] == "write"
+    assert package["permissions"]["attestations"] == "write"
+    package_commands = "\n".join(step.get("run", "") for step in package["steps"])
+    assert "scripts/bundle.py --image" in package_commands
+    assert "scripts/test_bundle.py" in package_commands
+    assert "scripts/archive.py" in package_commands
+    assert (
+        "${{ needs.release-metadata.outputs.relay-image }}"
+        in package["env"]["RELAY_IMAGE"]
+    )
+    assert any(
+        "attest-build-provenance@" in step.get("uses", "") for step in package["steps"]
+    )
+    assert any("upload-artifact@" in step.get("uses", "") for step in package["steps"])
+    archive = (ROOT / "scripts/archive.py").read_text()
+    assert "ditto" in archive
+    assert "OpenMaskit Companion.app" in archive
+    assert "SHA256SUMS.txt" in archive
+    assert "openmaskit-companion-cli-" not in archive
 
 
 def test_scanner_downloads_enforce_https_across_redirects():
-    for name in ("quality.yml", "security.yml", "intel-wheel.yml"):
+    for name in ("quality.yml", "security.yml"):
         for job in workflow(name)["jobs"].values():
             for step in job.get("steps", []):
                 command = step.get("run", "")
@@ -143,40 +271,6 @@ def test_scanner_downloads_enforce_https_across_redirects():
                     assert "--proto '=https'" in command
                     assert "--proto-redir '=https'" in command
                     assert "--insecure" not in command
-
-
-def test_durable_library_publication_is_main_only_and_requires_all_acceptance():
-    jobs = workflow("validate.yml")["jobs"]
-    assert workflow("validate.yml")["permissions"] == {"contents": "read"}
-    assert jobs["intel-wheel"]["permissions"] == {
-        "contents": "read",
-        "actions": "read",
-        "attestations": "read",
-    }
-    publisher = jobs["native-release"]
-    assert "github.ref == 'refs/heads/main'" in publisher["if"]
-    assert "github.event_name != 'pull_request'" in publisher["if"]
-    assert set(publisher["needs"]) == {
-        "test",
-        "image",
-        "quality",
-        "security",
-        "intel-wheel",
-    }
-    assert publisher["permissions"]["contents"] == "write"
-    assert publisher["permissions"]["attestations"] == "write"
-    assert set(jobs["package"]["needs"]) == {"publish", "native-release"}
-    builder = workflow("intel-wheel.yml")
-    assert builder["permissions"]["contents"] == "read"
-    assert builder["permissions"]["attestations"] == "read"
-    assert builder["permissions"]["actions"] == "read"
-    steps = publisher["steps"]
-    commands = "\n".join(s.get("run", "") for s in steps)
-    assert "restore-release" in commands
-    assert "gh release create" in commands
-    assert "--clobber" not in commands
-    assert '--target "$GITHUB_SHA"' in commands
-    assert any("attest-build-provenance@" in s.get("uses", "") for s in steps)
 
 
 def report_summary(path, *, root=None, remove_root=False):

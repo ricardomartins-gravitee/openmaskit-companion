@@ -13,8 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    if platform.system() != "Darwin":
+        raise SystemExit("OpenMaskit Companion is a macOS application")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", help="Published companion image pinned by digest")
+    parser.add_argument(
+        "--image", help="Published connector relay image pinned by digest"
+    )
     args = parser.parse_args()
     entry = ROOT / ".runtime/bundle-entry.py"
     entry.parent.mkdir(exist_ok=True)
@@ -31,6 +35,8 @@ def main():
             "openmaskit-companion",
             "--collect-all",
             "openmaskit_companion",
+            "--collect-all",
+            "openmaskit_connector",
             "--collect-submodules",
             "uvicorn",
             str(entry),
@@ -38,8 +44,6 @@ def main():
         cwd=ROOT,
         check=True,
     )
-    if platform.system() != "Darwin":
-        return
     subprocess.run(
         [
             "swift",
@@ -64,9 +68,15 @@ def main():
         resources / "backend/openmaskit-companion",
         dirs_exist_ok=True,
     )
+    connector = json.loads((ROOT / "dependencies/connector.json").read_text())
+    from importlib.metadata import version
+
+    if version("openmaskit-connector") != connector["version"]:
+        raise ValueError("Installed connector does not match the reviewed version")
     release = json.loads(
         (ROOT / "src/openmaskit_companion/data/release.json").read_text()
     )
+    release["connector"] = connector
     if args.image:
         from openmaskit_companion.manager import image_digest
 

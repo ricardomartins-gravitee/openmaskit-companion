@@ -14,18 +14,17 @@ from importlib.resources import files
 from pathlib import Path
 
 import httpx
-
-from .state import local_endpoint, private_dir, read_json, write_json
+from openmaskit_connector.state import private_dir, read_json, write_json
 
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
 RELAY = "http://127.0.0.1:9495"
-IMAGE_PREFIX = "ghcr.io/ricardomartins-gravitee/openmaskit-companion@sha256:"
+IMAGE_PREFIX = "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
 
 
 def image_digest(value: str) -> str:
     if not value.startswith(IMAGE_PREFIX):
-        raise ValueError("Use a companion release image pinned by digest")
+        raise ValueError("Use a connector relay release image pinned by digest")
     suffix = value[len(IMAGE_PREFIX) :]
     if len(suffix) != 64 or any(c not in "0123456789abcdef" for c in suffix):
         raise ValueError("Invalid release digest")
@@ -231,27 +230,8 @@ def admin(home: Path, method, path, body=None):
         return response.json()
 
 
-def pair(home: Path, endpoint: str, code: str):
-    endpoint = local_endpoint(endpoint)
-    with httpx.Client(trust_env=False, timeout=10) as api:
-        response = api.post(endpoint + "/pair", json={"code": code})
-        response.raise_for_status()
-        data = response.json()
-    if (
-        data.get("protocol") != 1
-        or not isinstance(data.get("token"), str)
-        or len(data["token"]) < 32
-    ):
-        raise ValueError("Incompatible pairing response")
-    write_json(
-        home / "connection.json",
-        {"endpoint": endpoint, "id": data["id"], "token": data["token"]},
-    )
-    return {"paired": True, "id": data["id"]}
-
-
 def register_target(home: Path, profile: str, name: str):
-    from .state import identifier
+    from openmaskit_connector.state import identifier
 
     config = read_json(home / "connection.json")
     secret = read_json(home / "stack/relay/relay.json")["proxy_token"]
