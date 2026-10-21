@@ -1,75 +1,89 @@
 # Architecture and trust boundaries
 
-Status: initial development implementation, protocol version 1.
+Status: development implementation, connector protocol version 1.
 
 ## Repository boundary
 
-OpenMaskit remains a maintained native GitHub fork with its existing name. This
-repository owns desktop packaging, host supervision, approved local launchers,
-the outbound bridge and relay. The relay presents ordinary MCP Streamable HTTP,
-so OpenMaskit's existing HTTP target support is sufficient. No companion-specific
-transport or desktop packaging code needs to be added to the fork.
+This repository owns the SwiftUI/AppKit macOS app, local product manager, and
+managed OpenMaskit/Presidio lifecycle. The
+[OpenMaskit Connector repository](https://github.com/ricardomartins-gravitee/openmaskit-connector)
+owns the versioned Python connector package, relay protocol and relay images.
+The companion consumes the connector as a locked dependency and bundles it in the app's backend executable. Its thin CLI integration delegates connector operations and passes
+the existing `~/.openmaskit-companion/` state home explicitly.
+
+The connector's standalone default remains `~/.openmaskit-connector/`. The
+companion's explicit home preserves existing pairing credentials, profiles and
+state layout. This integration does not silently copy, rename or migrate user
+state.
+
+The relay exposes standard MCP Streamable HTTP, so OpenMaskit's existing HTTP
+target support is sufficient. No private OpenMaskit transport is required.
 
 ```text
-AI client <-> OpenMaskit:9494 <-> private relay MCP endpoint
-                    |                   ^
-                 Presidio               | authenticated outbound WebSocket
-                                        |
-                                  host connector <-> approved stdio MCP
+AI client <-> OpenMaskit:9494 <-> connector relay MCP endpoint
+                    |                         ^
+                 Presidio                     | authenticated outbound WebSocket
+                                              |
+                         macOS app -> local connector -> approved stdio MCP
 ```
 
-## Permissions
+## Permissions and credentials
 
-Pairing requires the local manager's relay admin credential. Pairing codes have
+Pairing requires the local manager's relay-admin credential. Pairing codes have
 144 bits of entropy, expire in 120 seconds, are stored hashed in memory and are
-consumed once. The public pairing endpoint is rate limited globally. Each paired
-connector receives a separate 256-bit token; only its hash is retained by the
-relay. Revoking it closes the live channel and every session. Relay restarts
-invalidate pending pairing codes but preserve paired identities.
+consumed once. The public pairing endpoint is rate limited globally. Each
+paired connector receives a separate 256-bit token; only its hash is retained
+by the relay. Revoking it closes the live channel and every session. Relay
+restarts invalidate pending pairing codes but preserve paired identities.
 
-The proxy credential is distinct from admin and connector credentials. OpenMaskit
-stores its proxy header through its encrypted normal HTTP configuration path.
-Relay requests with a browser Origin are rejected. MCP Host validation uses the
-SDK's DNS-rebinding protection. Only loopback host ports are published. Native
-connector endpoints are loopback-only in this release; remote TLS deployments
-require a separate design and acceptance.
+The proxy credential is distinct from admin and connector credentials.
+OpenMaskit stores its proxy header through its normal encrypted HTTP
+configuration path. The connector relay rejects requests with a browser Origin.
+MCP Host validation uses the SDK's DNS-rebinding protection. Host-facing ports
+are bound to loopback. Remote TLS deployments require a separate design and
+acceptance.
 
-The host stores exact absolute executable paths, argument arrays, environment and
-working directories in a private file. It never accepts them from the relay.
-Profiles are loaded once per connection. Child stderr is discarded; MCP payloads
-are never logged. State is permission-protected, not independently encrypted;
-OS keychain storage is planned. The connector is not a sandbox for the MCP.
+The host stores exact absolute executable paths, argument arrays, environment
+and working directories in a private file. The relay can select only locally
+approved profiles; it never supplies commands, paths, environment overrides or
+working directories. Profiles are loaded once per connection. Child stderr is
+discarded and MCP payloads are never logged. State is permission-protected, not
+independently encrypted; OS keychain storage is planned. The connector is not a
+sandbox for the MCP.
 
 ## Messages and lifecycle
 
-The hello frame contains protocol version and approved profile IDs/display names
-only. Relay open frames name a profile and fresh random session ID. Message frames
-carry validated complete MCP JSON-RPC objects; close/closed terminate a session.
-The SDK handles the public Streamable HTTP session semantics. Bidirectional
-requests, responses, notifications and cancellation cross the bridge. Neither
-side fabricates MCP initialization capabilities.
+The connector hello frame contains protocol version and approved profile IDs
+and display names only. Relay open frames name a profile and fresh random
+session ID. Message frames carry validated complete MCP JSON-RPC objects;
+close/closed terminate a session. The SDK handles public Streamable HTTP
+session semantics. Bidirectional requests, responses, notifications and
+cancellation cross the bridge. Neither side fabricates MCP initialization
+capabilities.
 
-Limits: 1 MiB messages, 32 queued messages per session, four sessions per computer,
-32 profiles per connector, 16 paired computers, 64 active profile managers per
-relay process, 300-second idle HTTP sessions. No persisted payload queue or replay
-on reconnection. Interrupted calls have uncertain outcomes; callers must not
-automatically retry side-effecting tools. Disconnect terminates child processes
-and wakes outstanding HTTP sessions. Failures never bypass OpenMaskit privacy
-checks or connect AI clients directly to the raw MCP.
+Limits: 1 MiB messages, 32 queued messages per session, four sessions per
+computer, 32 profiles per connector, 16 paired computers, 64 active profile
+managers per relay process, and 300-second idle HTTP sessions. No persisted
+payload queue or replay on reconnection. Interrupted calls have uncertain
+outcomes; callers must not automatically retry side-effecting tools. Disconnect
+terminates child processes and wakes outstanding HTTP sessions. Failures never
+bypass OpenMaskit's privacy checks or connect AI clients directly to raw MCPs.
 
-## Local manager
+## Managed local installation
 
-The manager controls a dedicated `openmaskit-companion` Compose project in its own
-private state directory. It never adopts, stops or removes other Docker projects.
-OpenMaskit has a separate persistent volume and key; Presidio and relay share an
-internal network with OpenMaskit. Presidio joins only that network. The relay also
-joins a dedicated host-facing network for the published loopback connection;
-Docker Desktop cannot reliably publish a service connected only to an internal
-network. OpenMaskit separately has outbound network access for HTTP MCPs.
-Only the native manager invokes the host's Docker executable; no container gets
-the Docker socket. Docker access is powerful and is not delegated to MCP tools.
+The manager controls only its dedicated
+`openmaskit-companion-<installation-id>` Compose project in the private
+companion state directory. It validates project names and never adopts, stops
+or removes other Docker projects. OpenMaskit keeps its separate persistent
+volume and key. Presidio and relay share the internal network with OpenMaskit;
+the relay also joins the dedicated host-facing network required for loopback
+port publishing. OpenMaskit retains outbound access for its HTTP MCP targets.
+Only the host manager invokes Docker, using argument arrays and fixed project
+files. No container gets the Docker socket.
 
-Automatic updates and login items are off. A foreground connector retries an
-empty connection with bounded backoff while the app runs; this is not a scheduled
-installer. Laptop sleep disconnects local MCPs. Nothing makes them available
-while the host is asleep.
+Existing installations keep their state, project marker, volume, service names
+and running containers. Moving relay-image ownership to the connector repository
+does not automatically pull a new image, recreate containers or migrate state.
+Any later manual update must use a verified compatible image, a complete backup
+and a rollback plan. No automatic update or login item is enabled. Quitting the
+app stops the local host connector; it does not stop managed containers.

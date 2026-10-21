@@ -1,0 +1,70 @@
+name: Code quality and coverage
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflows:
+    name: GitHub workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify and run Actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          printf '%s  %s\n' \
+            8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 \
+            "$archive" | sha256sum --check --status
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
+
+  python:
+    name: Python quality and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: '0.13.1'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ricardomartins-gravitee/openmaskit-connector
+          ref: 0ee39a0e177ce3e169c919d6b4da9e84052202e8
+          path: .runtime/connector-source
+      - run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package openmaskit-connector
+      - name: Install the reviewed connector source from its verified wheel
+        run: uv run --frozen --no-sync --no-build python scripts/install_connector.py
+      - name: Lint Python source, scripts and tests
+        run: uv run --frozen --no-sync --no-build ruff check src scripts tests
+      - name: Check Python formatting
+        run: uv run --frozen --no-sync --no-build ruff format --check src scripts tests
+      - name: Analyze production Python security
+        run: uv run --frozen --no-sync --no-build bandit --recursive src --format json --output bandit.json
+      - name: Enforce coverage threshold including branches
+        run: uv run --frozen --no-sync --no-build pytest -q --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+      - name: Export all locked dependencies for auditing
+        run: uv export --frozen --all-groups --no-emit-project --no-emit-package openmaskit-connector --format requirements-txt > requirements-audit.txt
+      - name: Audit locked runtime and development dependencies
+        run: uv run --frozen --no-sync --no-build pip-audit --disable-pip --require-hashes --strict --requirement requirements-audit.txt --format json --output pip-audit.json
+      - name: Retain quality and coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-quality-reports
+          path: |
+            coverage.xml
+            htmlcov/
+            pip-audit.json
+          if-no-files-found: ignore
+          retention-days: 14
