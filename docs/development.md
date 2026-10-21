@@ -61,6 +61,8 @@ while comparing the saved rules and analyzer settings. `--isolated-ports` runs
 this fixture beside an installed Companion using only ephemeral ports and its
 own generated Compose project. Its explicit pairing endpoint stays inside that
 fixture. No real mailbox tools are invoked.
+The same fixture verifies protocol keepalive through the masked proxy, followed
+by another synthetic tool call, without altering saved rules or privacy settings.
 
 To keep a review build separate from an installed app, use
 `scripts/bundle.py --output-dir .runtime/review-dist` (with the verified relay

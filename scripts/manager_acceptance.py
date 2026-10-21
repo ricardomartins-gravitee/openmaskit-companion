@@ -39,6 +39,7 @@ def main(image, candidate_image=None, isolated_ports=False):
     if isolated_ports:
         # Overrides exist only inside this synthetic test process/driver.
         manager.WEB = installation.MANAGED_URL = f"http://127.0.0.1:{web}"
+        manager.MCP = f"http://127.0.0.1:{mcp}"
         manager.RELAY = f"http://127.0.0.1:{relay}"
     (ROOT / ".runtime").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -52,6 +53,7 @@ def main(image, candidate_image=None, isolated_ports=False):
             driver.write_text(
                 "from openmaskit_companion import manager,installation,cli\n"
                 f"manager.WEB=installation.MANAGED_URL={manager.WEB!r}\n"
+                f"manager.MCP={manager.MCP!r}\n"
                 f"manager.RELAY={manager.RELAY!r}\n"
                 "cli.main()\n"
             )
@@ -241,6 +243,11 @@ def main(image, candidate_image=None, isolated_ports=False):
             cli("start-installed")
             assert cli("refresh-connections", "--wait-ready")["refreshed"] == 1
             assert cli("wait-services")["ready"]
+            assert cli("keep-connections") == {
+                "connected": True,
+                "checked": 1,
+                "failed": 0,
+            }
             asyncio.run(call())
             with httpx.Client(base_url=manager.WEB, trust_env=False, timeout=10) as api:
                 assert (
@@ -256,7 +263,7 @@ def main(image, candidate_image=None, isolated_ports=False):
                 "PASS: actual manager CLI setup/start/pair/approve/connect/register/status/stop,"
             )
             print(
-                "idempotent registration, read-only attachment, automatic-start ordering, connector restart/reconnect preserving rules/settings, private status, isolated project and live host MCP round trip."
+                "idempotent registration, read-only attachment, automatic-start ordering, connector restart/reconnect, protocol keepalive preserving rules/settings, private status, isolated project and live host MCP round trip."
             )
         finally:
             if connector is not None and connector.poll() is None:
