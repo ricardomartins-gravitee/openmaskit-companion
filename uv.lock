@@ -896,7 +896,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "openmaskit-connector", git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=0ee39a0e177ce3e169c919d6b4da9e84052202e8" },
+    { name = "openmaskit-connector", git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=56d88cd5c97d7428760abadbd9d1511c1f8db972" },
 ]
 
 [package.metadata.requires-dev]
@@ -914,8 +914,8 @@ dev = [
 
 [[package]]
 name = "openmaskit-connector"
-version = "0.1.0a2"
-source = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=0ee39a0e177ce3e169c919d6b4da9e84052202e8#0ee39a0e177ce3e169c919d6b4da9e84052202e8" }
+version = "0.1.0a3"
+source = { git = "https://github.com/ricardomartins-gravitee/openmaskit-connector.git?rev=56d88cd5c97d7428760abadbd9d1511c1f8db972#56d88cd5c97d7428760abadbd9d1511c1f8db972" }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },
