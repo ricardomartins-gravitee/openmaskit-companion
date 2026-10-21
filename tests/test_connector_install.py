@@ -21,7 +21,7 @@ def load_helper(monkeypatch):
 def make_wheel(
     directory,
     *,
-    version="0.1.0a2",
+    version="0.1.0a3",
     tag="py3-none-any",
     native=False,
     metadata_name="openmaskit-connector",

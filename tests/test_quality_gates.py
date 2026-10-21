@@ -20,7 +20,7 @@ def workflow(name):
 
 
 CONNECTOR_REPOSITORY = "ricardomartins-gravitee/openmaskit-connector"
-CONNECTOR_PIN = "0ee39a0e177ce3e169c919d6b4da9e84052202e8"
+CONNECTOR_PIN = "56d88cd5c97d7428760abadbd9d1511c1f8db972"
 
 
 def test_quality_and_security_gate_all_companion_checks_and_packaging():
@@ -96,7 +96,7 @@ def test_connector_source_and_intel_wheel_are_pinned_to_the_same_commit():
     commit = pin["commit"]
     assert commit == CONNECTOR_PIN
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
-    assert "openmaskit-connector==0.1.0a2" in pyproject["project"]["dependencies"]
+    assert "openmaskit-connector==0.1.0a3" in pyproject["project"]["dependencies"]
     source = pyproject["tool"]["uv"]["sources"]["openmaskit-connector"]
     assert source["rev"] == commit
     jobs = workflow("validate.yml")["jobs"]
@@ -140,7 +140,7 @@ def test_connector_source_and_intel_wheel_are_pinned_to_the_same_commit():
         for package in lock["package"]
         if package["name"] == "openmaskit-connector"
     )
-    assert locked_connector["version"] == "0.1.0a2"
+    assert locked_connector["version"] == "0.1.0a3"
     locked_git = locked_connector["source"]["git"]
     parsed_git = urlsplit(locked_git)
     assert parsed_git.scheme == "https"
@@ -210,6 +210,9 @@ def test_companion_app_is_built_and_exercised_on_both_macos_architectures():
     )
     assert "tests/test_app_contract.py" in bundle_test
     assert '"COMPANION_BINARY"' in bundle_test
+    bundle_script = (ROOT / "scripts/bundle.py").read_text()
+    assert '"--copy-metadata"' in bundle_script
+    assert '"openmaskit-connector"' in bundle_script
 
 
 def test_local_candidate_relay_acceptance_is_isolated_and_does_not_publish_an_image():
