@@ -118,7 +118,11 @@ struct CompanionOverview: View {
 
   @ViewBuilder private var localMCPs: some View {
     if model.installation.mode == .existing {
-      CompanionPanel("MCP servers", detail: "\(model.installation.serverCount) configured") {
+      CompanionPanel(
+        "MCP servers",
+        detail: model.installation.ready
+          ? "\(model.installation.serverCount) configured" : "Unavailable"
+      ) {
         Text(
           "Your servers and privacy rules remain in OpenMaskit. Open its dashboard to manage them."
         )
