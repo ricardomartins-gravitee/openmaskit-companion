@@ -49,6 +49,10 @@ replays interrupted operations as part of these checks.
 Raw MCP results enter the local OpenMaskit container before masking. AI clients
 connect to OpenMaskit, never directly to the relay. No Docker socket is mounted.
 
+Companion uses your standard Docker Desktop installation and its Docker Compose
+tools. It manages one dedicated Compose project on this Mac. Installation and
+connection choices are available in onboarding and Settings.
+
 ## Run from source
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and open
