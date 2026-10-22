@@ -62,6 +62,30 @@ def invoke(home, *args, text=None):
     return json.loads(result.stdout)
 
 
+def test_packaged_requirements_are_available_before_setup_without_remote_access(
+    tmp_path,
+):
+    result = subprocess.run(
+        command(tmp_path, "prerequisites"),
+        text=True,
+        capture_output=True,
+        timeout=30,
+        env={
+            **os.environ,
+            "DOCKER_CONTEXT": "",
+            "DOCKER_HOST": "tcp://remote.invalid:2375",
+        },
+    )
+    assert result.returncode == 0
+    report = json.loads(result.stdout)
+    assert not report["ready"]
+    assert {"cli", "context", "compose", "daemon"} <= {
+        row["id"] for row in report["checks"]
+    }
+    assert "remote.invalid" not in result.stdout
+    assert not list(tmp_path.iterdir())
+
+
 def test_approved_profiles_survive_the_repository_split(tmp_path):
     profile = tmp_path / "synthetic-profile.json"
     write_json(profile, {"command": sys.executable, "args": ["synthetic"]})

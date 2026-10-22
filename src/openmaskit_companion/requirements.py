@@ -22,7 +22,9 @@ def command_ready(arguments, *, flags=()):
         result = subprocess.run(  # nosec B603
             arguments, capture_output=True, text=True, timeout=5
         )
-        return result.returncode == 0 and all(flag in result.stdout for flag in flags)
+        return result.returncode == 0 and all(
+            flag in result.stdout.split() for flag in flags
+        )
     except (OSError, subprocess.TimeoutExpired):
         return False
 
