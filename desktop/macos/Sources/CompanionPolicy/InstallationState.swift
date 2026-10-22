@@ -84,3 +84,21 @@ public struct ConnectorState: Codable, Identifiable {
   public let name: String
   public let connected: Bool
 }
+
+public struct RuntimeRequirements: Codable {
+  public let ready: Bool
+  public let checks: [RuntimeRequirement]
+  public var issue: String? {
+    checks.first { $0.state == "needs_attention" }?.detail
+  }
+  public var canStartDocker: Bool {
+    !checks.isEmpty && checks.filter { $0.id != "daemon" }.allSatisfy { $0.state == "ready" }
+  }
+}
+
+public struct RuntimeRequirement: Codable, Identifiable {
+  public let id: String
+  public let title: String
+  public let state: String
+  public let detail: String
+}

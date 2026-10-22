@@ -44,6 +44,7 @@ struct InstallationSetup: View {
           "Existing Companion data is reused. Other installations and their settings are kept in place."
         )
         .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
+        RuntimeRequirementsView(model: model)
         Button(
           model.installation.initialized ? "Start and Finish Setup" : "Set Up and Start OpenMaskit"
         ) {
@@ -51,8 +52,10 @@ struct InstallationSetup: View {
         }
         .buttonStyle(CompanionButtonStyle(kind: .primary))
         .disabled(
-          model.installation.mode == .managed && model.installation.configured
-            && model.installation.ready)
+          model.requirements?.ready != true || model.checkingRequirements
+            || (model.installation.mode == .managed && model.installation.configured
+              && model.installation.ready)
+        )
       }
       if model.installation.configured {
         Text(
@@ -62,6 +65,9 @@ struct InstallationSetup: View {
       }
     }
     .disabled(model.busy)
+    .task(id: choice) {
+      if choice == "managed" { await model.checkRequirements() }
+    }
     .onAppear {
       choice =
         model.installation.mode == .managed && model.installation.configured
@@ -69,6 +75,53 @@ struct InstallationSetup: View {
       if model.installation.mode == .existing, let saved = model.installation.dashboard {
         address = saved
       }
+    }
+  }
+}
+
+struct RuntimeRequirementsView: View {
+  @ObservedObject var model: CompanionModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: CompanionTokens.spaceSm) {
+      Text("Requirements").fontWeight(.medium)
+      if let report = model.requirements {
+        ForEach(report.checks) { check in
+          HStack(alignment: .top) {
+            Image(
+              systemName: check.state == "ready" ? "checkmark.circle" : "exclamationmark.circle"
+            )
+            .foregroundStyle(check.state == "ready" ? CompanionTheme.accent : CompanionTheme.orange)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading) {
+              Text(
+                check.title
+                  + (check.state == "ready"
+                    ? " · Ready" : (check.state == "blocked" ? " · Waiting" : " · Needs attention"))
+              )
+              if check.state == "needs_attention" {
+                Text(check.detail).font(CompanionTypography.caption)
+                  .foregroundStyle(CompanionTheme.secondary)
+              }
+            }
+          }
+          .accessibilityElement(children: .combine)
+        }
+      } else {
+        Text(model.requirementsError.isEmpty ? "Checking requirements…" : model.requirementsError)
+          .foregroundStyle(CompanionTheme.secondary)
+      }
+      if !model.requirementsError.isEmpty && model.requirements != nil {
+        Text(model.requirementsError).foregroundStyle(CompanionTheme.orange)
+      }
+      if let report = model.requirements, !report.ready && report.canStartDocker {
+        Button("Open Docker Desktop") { Task { await model.openDockerDesktop() } }
+          .buttonStyle(CompanionButtonStyle())
+      }
+      Button(model.checkingRequirements ? "Checking…" : "Check Again") {
+        Task { await model.checkRequirements() }
+      }
+      .buttonStyle(CompanionButtonStyle()).disabled(model.checkingRequirements)
     }
   }
 }

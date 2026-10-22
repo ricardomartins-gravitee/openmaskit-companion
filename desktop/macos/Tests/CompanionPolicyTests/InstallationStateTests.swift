@@ -4,6 +4,29 @@ import XCTest
 @testable import CompanionPolicy
 
 final class InstallationStateTests: XCTestCase {
+  func testRuntimeRequirementFailuresAndRecovery() throws {
+    let json = """
+      {"ready":false,"checks":[
+        {"id":"desktop","title":"Docker Desktop","state":"needs_attention","detail":"Install Docker Desktop."},
+        {"id":"daemon","title":"Docker engine","state":"blocked","detail":"Open Docker Desktop."}]}
+      """
+    let missing = try JSONDecoder().decode(RuntimeRequirements.self, from: Data(json.utf8))
+    XCTAssertFalse(missing.ready)
+    XCTAssertFalse(missing.canStartDocker)
+    XCTAssertEqual(missing.issue, "Install Docker Desktop.")
+    let stopped = json.replacingOccurrences(of: "needs_attention", with: "ready")
+      .replacingOccurrences(of: "blocked", with: "needs_attention")
+    let waiting = try JSONDecoder().decode(RuntimeRequirements.self, from: Data(stopped.utf8))
+    XCTAssertTrue(waiting.canStartDocker)
+    XCTAssertEqual(waiting.issue, "Open Docker Desktop.")
+    let recovered = stopped.replacingOccurrences(of: "needs_attention", with: "ready")
+      .replacingOccurrences(of: "\"ready\":false", with: "\"ready\":true")
+    let ready = try JSONDecoder().decode(RuntimeRequirements.self, from: Data(recovered.utf8))
+    XCTAssertTrue(ready.ready)
+    XCTAssertTrue(ready.canStartDocker)
+    XCTAssertNil(ready.issue)
+  }
+
   func testFreshInstallShowsOnboardingAndCannotOpenAnything() {
     let state = InstallationState()
     XCTAssertTrue(state.needsOnboarding)

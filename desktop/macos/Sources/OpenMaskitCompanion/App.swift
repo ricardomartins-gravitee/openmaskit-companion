@@ -20,10 +20,13 @@ struct LocalProfile: Codable, Identifiable {
   @Published var settingsSection = "installation"
   var connectorIsOnline: Bool { connectorRunning && connectorWasOnline }
   var runtimeIsReady: Bool {
-    installation.servicesAreHealthy
+    requirements?.ready != false && installation.servicesAreHealthy
       && (!installation.paired || profiles.isEmpty || connectorIsOnline)
   }
   @Published var profiles: [LocalProfile] = []
+  @Published var requirements: RuntimeRequirements?
+  @Published var requirementsError = ""
+  @Published var checkingRequirements = false
   @Published var busy = false
   @Published var hasLoaded = false
   @Published var progress = ""
@@ -113,6 +116,10 @@ struct LocalProfile: Codable, Identifiable {
     let generation = configurationGeneration
     do {
       let state = try JSONDecoder().decode(Installation.self, from: await invoke(["status"]))
+      let runtimeRequirements =
+        state.mode == .managed
+        ? try JSONDecoder().decode(RuntimeRequirements.self, from: await invoke(["prerequisites"]))
+        : nil
       struct ProfileList: Codable { let profiles: [LocalProfile] }
       let list =
         state.mode == .managed
@@ -120,6 +127,15 @@ struct LocalProfile: Codable, Identifiable {
         : ProfileList(profiles: [])
       guard generation == configurationGeneration && !busy else { return }
       installation = state
+      if let runtimeRequirements {
+        if let issue = runtimeRequirements.issue {
+          message = issue
+        } else if message == requirements?.issue {
+          message = ""
+        }
+        requirements = runtimeRequirements
+        requirementsError = ""
+      }
       profiles = list.profiles
       let firstLoad = !hasLoaded
       hasLoaded = true
@@ -155,6 +171,29 @@ struct LocalProfile: Codable, Identifiable {
     }
   }
 
+  func checkRequirements() async {
+    guard !checkingRequirements else { return }
+    checkingRequirements = true
+    defer { checkingRequirements = false }
+    do {
+      requirements = try JSONDecoder().decode(
+        RuntimeRequirements.self, from: await invoke(["prerequisites"]))
+      requirementsError = ""
+    } catch {
+      requirements = nil
+      requirementsError = "Requirements could not be checked. Try Check Again."
+    }
+  }
+
+  func openDockerDesktop() async {
+    do {
+      try await startupActions.openDocker()
+      await checkRequirements()
+    } catch {
+      requirementsError = "Docker Desktop could not be opened. Install it, then check again."
+    }
+  }
+
   private func connectorOnline() async throws -> Bool {
     struct Status: Decodable { let connected: Bool }
     return try JSONDecoder().decode(Status.self, from: await invoke(["connector-status"])).connected
@@ -171,9 +210,17 @@ struct LocalProfile: Codable, Identifiable {
   private var startupActions: StartupActions {
     StartupActions(
       dockerReady: {
-        struct Status: Decodable { let ready: Bool }
-        return try JSONDecoder().decode(Status.self, from: await self.invoke(["docker-status"]))
-          .ready
+        let report = try JSONDecoder().decode(
+          RuntimeRequirements.self, from: await self.invoke(["prerequisites"]))
+        self.requirements = report
+        guard report.canStartDocker else {
+          throw NSError(
+            domain: "Companion", code: 1,
+            userInfo: [
+              NSLocalizedDescriptionKey: report.issue ?? "Check requirements in Settings."
+            ])
+        }
+        return report.ready
       },
       openDocker: {
         guard
@@ -270,6 +317,11 @@ struct LocalProfile: Codable, Identifiable {
       progress = ""
     }
     do {
+      await checkRequirements()
+      guard requirements?.ready == true else {
+        message = requirements?.issue ?? "Check requirements before continuing."
+        return
+      }
       _ = try await invoke(["prepare-managed", "--image", image])
       stopConnector()
       progress = "Downloading and starting services. The first download can take several minutes…"

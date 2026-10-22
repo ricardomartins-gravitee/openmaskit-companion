@@ -167,6 +167,7 @@ struct CompanionMenu: View {
       }
       if model.installation.mode == .managed {
         Text(model.connectorIsOnline ? "Local MCPs · Connected" : "Local MCPs · Offline")
+        if let issue = model.requirements?.issue { Text(issue) }
       }
     } else {
       Text("Setup is required")
