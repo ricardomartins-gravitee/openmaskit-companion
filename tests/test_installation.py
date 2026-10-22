@@ -37,10 +37,26 @@ def fingerprint(root):
         ("https://127.0.0.1", "https://127.0.0.1:443"),
         ("http://[::1]:9473", "http://[::1]:9473"),
         ("http://127.0.0.2:9473", "http://127.0.0.2:9473"),
+        ("HTTP://LOCALHOST:9473", URL),
+        ("http://[0:0:0:0:0:0:0:1]:9473", "http://[::1]:9473"),
+        ("http://[::0001]:9473", "http://[::1]:9473"),
     ],
 )
 def test_loopback_address_normalization(value, expected):
     assert installation.local_url(value) == expected
+
+
+@respx.mock
+def test_health_probe_uses_canonical_ip_and_fixed_path():
+    route = respx.get("http://[::1]:9473/health").respond(200, json=HEALTH)
+    result = installation.probe("http://[0:0:0:0:0:0:0:1]:9473/")
+    assert result["dashboard"] == "http://[::1]:9473"
+    request = route.calls.last.request
+    assert request.method == "GET"
+    assert request.url.host == "::1"
+    assert request.url.raw_path == b"/health"
+    assert not request.url.userinfo
+    assert "Authorization" not in request.headers and "Cookie" not in request.headers
 
 
 @pytest.mark.parametrize(

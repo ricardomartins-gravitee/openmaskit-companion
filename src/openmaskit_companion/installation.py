@@ -49,15 +49,20 @@ def local_url(value):
         host = url.hostname
         if host == "localhost":
             host = "127.0.0.1"
-        if not host or "%" in host or not ipaddress.ip_address(host).is_loopback:
+        if not host or "%" in host:
             raise ValueError
-        port = (
-            url.port if url.port is not None else (443 if url.scheme == "https" else 80)
-        )
+        address = ipaddress.ip_address(host)
+        if not address.is_loopback:
+            raise ValueError
+        scheme = "https" if url.scheme == "https" else "http"
+        port = url.port if url.port is not None else (443 if scheme == "https" else 80)
         if not 1 <= port <= 65535:
             raise ValueError
-        host = f"[{host}]" if ":" in host else host
-        return f"{url.scheme}://{host}:{port}"
+        # Rebuild from a numeric IP object, a fixed scheme and an integer port.
+        # No hostname text from the supplied URL reaches the request boundary.
+        host = address.compressed
+        host = f"[{host}]" if address.version == 6 else host
+        return f"{scheme}://{host}:{port}"
     except (ValueError, TypeError):
         raise InstallationError("invalid_url") from None
 
@@ -160,6 +165,7 @@ class HealthProbeTransport(httpx.HTTPTransport):
 
 def probe(value):
     url = local_url(value)
+    endpoint = httpx.URL(url).copy_with(path="/health")
     try:
         deadline = time.monotonic() + 5
         with httpx.Client(
@@ -168,7 +174,7 @@ def probe(value):
             follow_redirects=False,
             transport=HealthProbeTransport(url),
         ) as api:
-            with api.stream("GET", url + "/health") as response:
+            with api.stream("GET", endpoint) as response:
                 if response.status_code not in {200, 503}:
                     raise InstallationError("not_openmaskit")
                 body = bytearray()
