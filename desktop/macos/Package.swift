@@ -22,5 +22,8 @@ let package = Package(
     .testTarget(name: "CompanionPolicyTests", dependencies: ["CompanionPolicy"]),
     .testTarget(
       name: "CompanionDesktopCoreTests", dependencies: ["CompanionDesktopCore", "CompanionPolicy"]),
+    .testTarget(
+      name: "CompanionAppTests",
+      dependencies: ["OpenMaskitCompanion", "CompanionDesktopCore"]),
   ]
 )

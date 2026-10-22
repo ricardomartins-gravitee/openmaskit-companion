@@ -77,6 +77,19 @@ Hosted XCTest runs both policy and desktop adapter suites. On local machines
 without XCTest, `scripts/test_macos_policy.py` and
 `scripts/test_macos_desktop.py` provide Command Line Tools acceptance checks.
 
+The application test target also exercises the actual Settings/onboarding window
+controller against AppKit: presenting a window uses regular presentation, closing
+the last window switches to accessory presentation (no Dock icon), and a second
+open Companion window prevents premature Dock hiding. The menu scene is
+unconditional and is covered by the application contract and policy tests.
+
+Prerequisite tests simulate removed Docker Desktop, missing command tools,
+remote/broken contexts, missing or incompatible Compose, stopped engines and
+recovery. They never uninstall or stop the developer's Docker. Checks are
+read-only, time-bounded and redact subprocess diagnostics; failed setup leaves
+the selected installation and its data unchanged. Existing-mode connections
+remain independent of Docker.
+
 The connector owns its relay and container acceptance gate. This repository's
 manager integration must continue to preserve existing installation state and
 containers when the connector dependency or image reference changes. No test

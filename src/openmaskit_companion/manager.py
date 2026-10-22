@@ -17,7 +17,7 @@ from pathlib import Path
 import httpx
 from openmaskit_connector.state import private_dir, read_json, write_json
 
-from . import installation
+from . import installation, requirements
 
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
@@ -42,9 +42,13 @@ def docker_binary():
         "/Applications/Docker.app/Contents/Resources/bin/docker",
     ]
     for option in options:
-        if option and Path(option).is_file():
+        if option and Path(option).is_file() and os.access(option, os.X_OK):
             return str(Path(option).resolve())
     raise ValueError("Open Docker Desktop to manage containers")
+
+
+def prerequisites():
+    return requirements.check(docker_binary, local_docker)
 
 
 def local_docker(binary, environment):
@@ -249,9 +253,7 @@ def prepare_managed(home, image):
     if (home / "stack").is_symlink() or (home / "stack/managed.json").is_symlink():
         raise installation.InstallationError("invalid_selection")
     image_digest(image)
-    try:
-        local_docker(docker_binary(), os.environ)
-    except (ValueError, OSError, subprocess.TimeoutExpired):
+    if not prerequisites()["ready"]:
         raise installation.InstallationError("docker_unavailable") from None
     if not (home / "stack/managed.json").exists():
         initialize(home, image)

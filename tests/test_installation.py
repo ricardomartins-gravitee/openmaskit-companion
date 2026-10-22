@@ -351,6 +351,7 @@ def test_new_installations_require_completion_but_legacy_installations_keep_stat
     assert fingerprint(tmp_path) == before
     monkeypatch.setattr(manager, "docker_binary", lambda: "/synthetic/docker")
     monkeypatch.setattr(manager, "local_docker", lambda *_: None)
+    monkeypatch.setattr(manager, "prerequisites", lambda: {"ready": True})
     manager.prepare_managed(tmp_path, IMAGE)
     assert not installation.selection(tmp_path)["configured"]
     for name, value in before.items():
@@ -382,6 +383,7 @@ def test_prepare_reuses_existing_stack_and_preserves_rules_on_switch(
     before = fingerprint(tmp_path / "stack")
     monkeypatch.setattr(manager, "docker_binary", lambda: "/synthetic/docker")
     monkeypatch.setattr(manager, "local_docker", lambda *_: None)
+    monkeypatch.setattr(manager, "prerequisites", lambda: {"ready": True})
     with patch.object(manager, "initialize") as create:
         manager.prepare_managed(tmp_path, IMAGE)
     create.assert_not_called()

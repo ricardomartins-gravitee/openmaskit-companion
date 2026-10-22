@@ -25,6 +25,7 @@ def parser():
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="action", required=True)
     commands.add_parser("status")
+    commands.add_parser("prerequisites")
     commands.add_parser("dashboard")
     commands.add_parser("docker-status")
     commands.add_parser("connector-status")
@@ -102,6 +103,8 @@ def main(argv=None):
     try:
         if args.action == "status":
             result = manager.status(home)
+        elif args.action == "prerequisites":
+            result = manager.prerequisites()
         elif args.action == "docker-status":
             result = manager.docker_ready(home)
         elif args.action == "connector-status":

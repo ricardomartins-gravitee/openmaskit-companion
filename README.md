@@ -103,6 +103,18 @@ action prepares, starts and verifies all three services before completing setup.
 If interrupted, retry **Start and Finish Setup**; existing Companion project
 files, credentials, volumes and rules are reused. No other installation is adopted.
 
+The managed setup shows a **Requirements** checklist for Docker Desktop, its
+command tools, a local Docker context, Compose capabilities and the running
+Docker engine. Setup rechecks these before creating or changing configuration.
+The same checklist is available in Settings and is checked during background
+status monitoring. If Docker is removed or its engine stops, Companion shows
+what needs attention and keeps the installation selection and saved data.
+Use **Open Docker Desktop** or **Check Again** after repairing it. An existing
+OpenMaskit connection does not require Docker and is checked independently.
+The packaged app includes its backend; Python and developer tools are not
+installation prerequisites. Downloading service images is part of initial setup;
+setup completes only after all three services pass their health checks.
+
 For the CLI, use a tested immutable connector relay image digest:
 
 

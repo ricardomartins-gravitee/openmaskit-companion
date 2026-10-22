@@ -90,6 +90,26 @@ def test_app_identity_stays_single_instance_and_menu_first(tmp_path):
     assert info["LSUIElement"] is True
 
 
+def test_requirements_are_checked_before_setup_and_during_monitoring():
+    app = (MAC / "Sources/OpenMaskitCompanion/App.swift").read_text()
+    onboarding = (MAC / "Sources/OpenMaskitCompanion/Onboarding.swift").read_text()
+    assert 'await invoke(["prerequisites"])' in app
+    assert 'await self.invoke(["prerequisites"])' in app
+    refresh = app[app.index("func refresh()") : app.index("func checkRequirements()")]
+    assert "state.mode == .managed" in refresh
+    assert '"prerequisites"' in refresh
+    setup = app[
+        app.index("func configureManaged()") : app.index("func openDashboard()")
+    ]
+    assert setup.index("await checkRequirements()") < setup.index(
+        'invoke(["prepare-managed"'
+    )
+    assert "guard requirements?.ready == true" in setup
+    assert "RuntimeRequirementsView(model: model)" in onboarding
+    assert ".task(id: choice)" in onboarding
+    assert 'if choice == "managed"' in onboarding
+
+
 def test_app_bundle_preserves_shared_library_attribution(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "design_bundle", ROOT / "scripts/bundle.py"
