@@ -10,14 +10,18 @@ import shutil
 
 # Docker lifecycle management requires fixed-argument subprocess calls.
 import subprocess  # nosec B404
+import time
 from importlib.resources import files
 from pathlib import Path
 
 import httpx
 from openmaskit_connector.state import private_dir, read_json, write_json
 
+from . import installation
+
 PROJECT = "openmaskit-companion"
 WEB = "http://127.0.0.1:9493"
+MCP = "http://127.0.0.1:9494"
 RELAY = "http://127.0.0.1:9495"
 IMAGE_PREFIX = "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
 
@@ -111,6 +115,7 @@ def initialize(home: Path, image: str):
 
 
 def compose(home: Path, *arguments, timeout=360):
+    installation.require_managed(home)
     stack = home / "stack"
     marker = read_json(stack / "managed.json")
     project = marker.get("project")
@@ -177,13 +182,26 @@ def compose(home: Path, *arguments, timeout=360):
 
 
 def status(home: Path):
+    selected = installation.selection(home)
     result = {
+        **selected,
+        "ready": False,
+        "server_count": 0,
+        "health": "offline",
+        "can_manage_services": selected["mode"] == "managed",
         "initialized": (home / "stack/managed.json").is_file(),
-        "dashboard": WEB,
         "services": [],
         "paired": (home / "connection.json").is_file(),
         "automatic_updates": False,
     }
+    if selected["mode"] == "existing":
+        result["paired"] = False
+        result["connectors"] = []
+        try:
+            result.update(installation.probe(selected["dashboard"]))
+        except installation.InstallationError as error:
+            result["error"] = str(error)
+        return result
     try:
         if result["initialized"]:
             raw = compose(home, "ps", "--all", "--format", "json", timeout=10)
@@ -192,6 +210,8 @@ def status(home: Path):
                 if raw.lstrip().startswith("[")
                 else [json.loads(line) for line in raw.splitlines() if line]
             )
+            if not data and not (home / "installation.json").exists():
+                result["configured"] = False
             result["services"] = [
                 {
                     "name": row["Service"],
@@ -214,10 +234,58 @@ def status(home: Path):
             ]
         except (ValueError, httpx.HTTPError):
             result["connectors"] = []
+    if selected["mode"] == "managed" and any(
+        row["name"] == "openmaskit" and row["state"] == "running"
+        for row in result["services"]
+    ):
+        try:
+            result.update(installation.probe(selected["dashboard"]))
+        except installation.InstallationError as error:
+            result["connection_error"] = str(error)
+    return result
+
+
+def prepare_managed(home, image):
+    if (home / "stack").is_symlink() or (home / "stack/managed.json").is_symlink():
+        raise installation.InstallationError("invalid_selection")
+    image_digest(image)
+    try:
+        local_docker(docker_binary(), os.environ)
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        raise installation.InstallationError("docker_unavailable") from None
+    if not (home / "stack/managed.json").exists():
+        initialize(home, image)
+    else:
+        marker = read_json(home / "stack/managed.json")
+        project = marker.get("project", "")
+        if (
+            marker.get("schema") != 1
+            or not isinstance(project, str)
+            or re.fullmatch(re.escape(PROJECT) + r"(?:-[0-9a-f]{12})?", project) is None
+        ):
+            raise ValueError("Invalid Companion installation marker")
+    installation.save(home, "managed", WEB, configured=False)
+    return {"dashboard": WEB, "initialized": True}
+
+
+def finish_start(home):
+    result = status(home)
+    if result.get("ready") and all(
+        any(
+            row["name"] == name
+            and row["state"] == "running"
+            and row["health"] == "healthy"
+            for row in result["services"]
+        )
+        for name in ("openmaskit", "presidio-analyzer", "connector-relay")
+    ):
+        installation.save(home, "managed", WEB)
+        result["configured"] = True
     return result
 
 
 def admin(home: Path, method, path, body=None):
+    installation.require_managed(home)
     settings = read_json(home / "stack/relay/relay.json")
     with httpx.Client(
         base_url=RELAY,
@@ -230,7 +298,147 @@ def admin(home: Path, method, path, body=None):
         return response.json()
 
 
+def docker_ready(home):
+    installation.require_configured_managed(home)
+    binary = docker_binary()
+    local_docker(binary, os.environ)
+    try:
+        # Read-only daemon probe, after rejecting remote Docker contexts.
+        result = subprocess.run(  # nosec B603
+            [binary, "info", "--format", "{{.ServerVersion}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return {"ready": result.returncode == 0}
+    except (OSError, subprocess.TimeoutExpired):
+        return {"ready": False}
+
+
+def connector_status(home):
+    installation.require_configured_managed(home)
+    config = read_json(home / "connection.json")
+    key = config.get("id")
+    if not key:
+        return {"connected": False}
+    rows = admin(home, "GET", "/admin/connectors")["connectors"]
+    return {"connected": any(row["id"] == key and row["connected"] for row in rows)}
+
+
+def wait_dashboard(home):
+    installation.require_configured_managed(home)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            installation.probe(WEB)
+            return
+        except installation.InstallationError:
+            time.sleep(0.25)
+    raise installation.InstallationError("unavailable")
+
+
+def _local_connection_targets(home, api):
+    """Select only saved active targets for this paired, approved connector."""
+    from openmaskit_connector.connector import profiles
+    from openmaskit_connector.state import identifier
+
+    paired = read_json(home / "connection.json")
+    key = identifier(paired["id"])
+    approved = profiles(home)
+    rows = admin(home, "GET", "/admin/connectors")["connectors"]
+    current = next((row for row in rows if row["id"] == key and row["connected"]), None)
+    if current is None:
+        return None
+    urls = {
+        f"http://connector-relay:9495/mcp/{key}/{identifier(profile)}"
+        for profile in approved
+        if profile in current["profiles"]
+    }
+    response = api.get("/api/targets")
+    response.raise_for_status()
+    candidates = []
+    for row in response.json()["targets"]:
+        config = row.get("config") or {}
+        if (
+            row.get("source") == "custom"
+            and config.get("transport") == "http"
+            and config.get("url") in urls
+        ):
+            target = identifier(row["name"])
+            saved = api.get(f"/api/targets/custom/{target}")
+            saved.raise_for_status()
+            data = saved.json()
+            if data["active"] and data["config"].get("url") in urls:
+                candidates.append(target)
+    if len(candidates) > 32:
+        raise ValueError("Too many local MCP connections to refresh at once")
+    return candidates
+
+
+def keep_connections(home):
+    """Send protocol pings through OpenMaskit; never run tools or reset sessions."""
+    installation.require_configured_managed(home)
+    with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
+        candidates = _local_connection_targets(home, api)
+    if candidates is None:
+        return {"connected": False, "checked": 0, "failed": 0}
+    failed = 0
+    with httpx.Client(base_url=MCP, trust_env=False, timeout=5) as api:
+        for target in candidates:
+            try:
+                response = api.post(
+                    f"/{target}/mcp",
+                    headers={"Accept": "application/json, text/event-stream"},
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": "companion-keepalive",
+                        "method": "ping",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                # A legacy server's method-not-found response also proves the
+                # transport is alive, without calling any mailbox/tool method.
+                alive = (
+                    isinstance(data, dict)
+                    and data.get("id") == "companion-keepalive"
+                    and (
+                        "result" in data
+                        or (data.get("error") or {}).get("code") == -32601
+                    )
+                )
+                failed += not alive
+            except (httpx.HTTPError, ValueError, AttributeError):
+                failed += 1
+    return {"connected": True, "checked": len(candidates), "failed": failed}
+
+
+def refresh_connections(home):
+    """Restore saved sessions after a connector restart, without replaying calls."""
+    installation.require_configured_managed(home)
+    with httpx.Client(base_url=WEB, trust_env=False, timeout=15) as api:
+        candidates = _local_connection_targets(home, api)
+        if candidates is None:
+            return {"connected": False, "refreshed": 0}
+        if candidates:
+            response = api.get("/api/csrf")
+            response.raise_for_status()
+            headers = {"Origin": WEB, "X-CSRF-Token": response.json()["token"]}
+            for target in candidates:
+                api.post(
+                    f"/api/targets/custom/{target}/deactivate", headers=headers
+                ).raise_for_status()
+                connected = api.post(
+                    f"/api/targets/custom/{target}/activate", headers=headers
+                )
+                connected.raise_for_status()
+                if not connected.json()["connected"]:
+                    raise ValueError("A saved local MCP could not reconnect")
+    return {"connected": True, "refreshed": len(candidates)}
+
+
 def register_target(home: Path, profile: str, name: str):
+    installation.require_managed(home)
     from openmaskit_connector.state import identifier
 
     config = read_json(home / "connection.json")

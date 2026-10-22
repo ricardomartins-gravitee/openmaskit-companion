@@ -22,6 +22,16 @@ def test_status_summarizes_services_without_exposing_state(monkeypatch, tmp_path
     home = managed_home(tmp_path)
     secret = "synthetic-admin-token"
     monkeypatch.setattr(
+        manager.installation,
+        "probe",
+        lambda url: {
+            "dashboard": url,
+            "ready": True,
+            "health": "healthy",
+            "server_count": 0,
+        },
+    )
+    monkeypatch.setattr(
         manager,
         "compose",
         lambda *_args, **_kwargs: json.dumps(

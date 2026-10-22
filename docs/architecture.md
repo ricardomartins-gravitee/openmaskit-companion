@@ -71,6 +71,32 @@ bypass OpenMaskit's privacy checks or connect AI clients directly to raw MCPs.
 
 ## Managed local installation
 
+### Installation selection and existing services
+
+`installation.json` under the private Companion state directory records the
+selected local origin, mode and completion state. It is an atomic, mode-0600
+pointer, not a copied OpenMaskit configuration. Existing managed state without
+this file is recognized in place. A legacy project that was only prepared and
+has no containers returns to onboarding; stopped or temporarily unavailable
+configured installations keep their selection.
+
+Existing mode performs read-only `GET /health` requests without proxy environment
+variables, redirects or credentials. Only HTTP/HTTPS loopback IPs or `localhost`
+are accepted. Responses have a size limit, timeouts and a schema check. A
+connected database is required; degraded MCPs do not prevent access to the
+dashboard for repair. Only readiness, aggregate health and a server count are
+returned to the UI. Target names and health error bodies are not exposed.
+
+Existing mode rejects managed service, relay administration, pairing and
+registration operations before Docker or credential access. It never opens the
+existing installation's files or writes its APIs. The dashboard opens only after
+a fresh successful health check; setup and attachment do not open it. Onboarding
+is for an unconfigured installation; service lifecycle and connection choices
+remain in Settings after setup. Switching stops only the app-owned host connector
+and preserves profiles, credentials and running services.
+
+### Dedicated project
+
 The manager controls only its dedicated
 `openmaskit-companion-<installation-id>` Compose project in the private
 companion state directory. It validates project names and never adopts, stops
@@ -87,3 +113,45 @@ does not automatically pull a new image, recreate containers or migrate state.
 Any later manual update must use a verified compatible image, a complete backup
 and a rollback plan. No automatic update or login item is enabled. Quitting the
 app stops the local host connector; it does not stop managed containers.
+
+## App launch and menu bar operation
+
+The native app starts as an accessory application. It has no configured main
+dashboard window; native AppKit window controllers host SwiftUI onboarding and
+Settings only. Dock reopening opens Settings (or unfinished onboarding). The
+menu bar item is unconditional and is available throughout onboarding, Settings
+and background operation. Closing the last window always switches to accessory
+presentation and hides the Dock icon. Retired visibility preferences are ignored,
+including explicit opt-outs saved by older builds.
+
+Before creating scenes or starting services, Companion acquires a private,
+per-account kernel file lock in its Application Support directory. Duplicate
+launches notify the running app to reveal Settings and exit without starting
+another connector. The lock is released automatically on normal exit or a crash;
+its file is retained to prevent inode replacement races. A running-app check also
+hands off to an older installed build during an upgrade. Onboarding and Settings
+reuse one controller each and share a single app process and Dock identity.
+
+Automatic runtime startup defaults on and is separately configurable. A loaded,
+configured managed selection is required. A once-per-process gate prevents
+monitoring, opening menus or reopening Settings from reversing a manual stop.
+The native coordinator probes only a validated local Docker context, opens the
+installed Docker Desktop app if necessary, and uses a two-minute readiness
+deadline with individually bounded probes. It
+starts Presidio and the relay before launching a previously paired/approved host
+connector. OpenMaskit is then started, saved active local connections are restored,
+and the full project is checked for health. Existing images are reused with
+`--pull never`; no setup, image update, new pairing or profile approval is automatic.
+
+Connector reconnection reinitializes only custom HTTP targets whose exact relay
+URL belongs to this paired computer and an approved/advertised profile. Inactive,
+unrelated and marketplace targets are excluded. The ordinary deactivate/activate
+API restores sessions without replacing configuration, rules, aliases or secrets.
+Failed reconnection is reported and leaves the target disconnected for repair.
+No interrupted MCP call is replayed. App monitoring detects a running connector's
+offline-to-online transition; an explicitly stopped connector stays stopped.
+While the app-owned connector is online, monitoring sends at most one keepalive
+batch per minute to those same active, approved targets through OpenMaskit's MCP
+endpoint. These are bounded protocol `ping` requests, retaining the relay's
+five-minute idle-session limit. They never invoke tools, bypass masking, reset
+sessions or retry interrupted calls. Failed checks are reported for repair.

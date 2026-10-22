@@ -1,0 +1,13 @@
+{
+  "pins" : [
+    {
+      "identity" : "openmaskit-design-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ricardomartins-gravitee/openmaskit-design-system.git",
+      "state" : {
+        "revision" : "4a3024357273354309ba21c72b427e094c99be88"
+      }
+    }
+  ],
+  "version" : 2
+}

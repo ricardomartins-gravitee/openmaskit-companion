@@ -96,6 +96,8 @@ jobs:
         run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
       - name: Run Swift tests
         run: swift test --package-path desktop/macos
+      - name: Run native process and startup acceptance
+        run: uv run --frozen --no-sync --no-build python scripts/test_macos_desktop.py
       - name: Build the companion app with the pinned connector
         run: uv run --frozen --no-sync --no-build python scripts/bundle.py
       - name: Exercise the bundled connector backend contract

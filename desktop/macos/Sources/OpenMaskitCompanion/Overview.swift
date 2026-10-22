@@ -1,220 +1,81 @@
-import AppKit
 import CompanionDesktopCore
 import SwiftUI
 
-private struct ContentHeight: PreferenceKey {
-  static var defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = max(value, nextValue())
+/// The only main window is first-run onboarding. Configured use stays in the menu bar.
+struct CompanionOnboarding: View {
+  @ObservedObject var model: CompanionModel
+  @ObservedObject var preferences: AppPreferences
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: CompanionTokens.spaceLg) {
+      HStack(spacing: CompanionTokens.spaceSm) {
+        CompanionBrandIcon(size: 36)
+        Text("OpenMaskit Companion").font(CompanionTypography.title)
+        Spacer()
+        CompanionBadge(title: "Development alpha", color: CompanionTheme.orange)
+      }
+      if model.hasLoaded {
+        InstallationSetup(model: model)
+      } else {
+        ProgressView("Reading your installation settings…")
+        if !model.message.isEmpty {
+          Button("Retry") { Task { await model.refresh() } }
+            .buttonStyle(CompanionButtonStyle())
+        }
+      }
+      InstallationFeedback(model: model)
+      HStack {
+        Text("Once configured, Companion runs from the menu bar.")
+          .font(CompanionTypography.caption).foregroundStyle(CompanionTheme.secondary)
+        Spacer()
+        Button("Settings…") { model.showSettings?() }
+          .buttonStyle(CompanionButtonStyle())
+      }
+    }
+    .font(CompanionTypography.body).foregroundStyle(CompanionTheme.text)
+    .padding(CompanionTokens.spaceLg).frame(width: 620)
+    .fixedSize(horizontal: false, vertical: true)
+    .background(CompanionTheme.root).tint(CompanionTheme.accent).preferredColorScheme(.dark)
   }
 }
 
-struct CompanionOverview: View {
+struct LocalMCPSettings: View {
   @ObservedObject var model: CompanionModel
-  @ObservedObject var preferences: AppPreferences
-  @State private var contentHeight: CGFloat = 272
-
-  private var maximumContentHeight: CGFloat {
-    min(620, max(240, (NSScreen.main?.visibleFrame.height ?? 800) - 180))
-  }
 
   var body: some View {
-    VStack(spacing: 0) {
-      header
-      Divider().overlay(CompanionTheme.border)
-      ScrollView {
-        VStack(spacing: 12) {
-          services
-          localMCPs
-          if let error = model.installation.error {
-            notice(error, color: CompanionTheme.orange)
-          }
-          if !model.message.isEmpty {
-            notice(model.message, color: CompanionTheme.secondary)
-          }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(
-          GeometryReader { geometry in
-            Color.clear.preference(key: ContentHeight.self, value: geometry.size.height)
-          }
-        )
-      }
-      .frame(height: min(contentHeight, maximumContentHeight))
-      .onPreferenceChange(ContentHeight.self) { height in
-        if height > 0 && abs(contentHeight - height) > 0.5 { contentHeight = height }
-      }
-      Divider().overlay(CompanionTheme.border)
-      footer
-    }
-    .font(.system(size: 12))
-    .foregroundStyle(CompanionTheme.text)
-    .background(CompanionTheme.root)
-    .frame(width: 620)
-    .fixedSize(horizontal: false, vertical: true)
-    .tint(CompanionTheme.accent)
-    .preferredColorScheme(.dark)
-    .background(MainWindowObserver(preferences: preferences))
-  }
-
-  private var header: some View {
-    HStack(spacing: 10) {
-      CompanionBrandIcon(size: 36)
-      VStack(alignment: .leading, spacing: 3) {
-        Text("OpenMaskit Companion")
-          .font(.system(size: 17, weight: .semibold, design: .monospaced))
-          .accessibilityAddTraits(.isHeader)
-        Text("Local services & MCP connections")
-          .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
-      }
-      Spacer()
-      CompanionBadge(title: "Development alpha", color: CompanionTheme.orange)
-    }
-    .padding(.horizontal, 16).padding(.vertical, 12)
-    .background(CompanionTheme.surface)
-  }
-
-  private var services: some View {
-    CompanionPanel("Services", detail: model.installation.initialized ? nil : "Not set up") {
-      if !model.installation.initialized {
-        HStack(spacing: 16) {
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Set up your local services").fontWeight(.medium)
-            Text("A dedicated OpenMaskit, Presidio and relay installation.")
-              .foregroundStyle(CompanionTheme.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-          Spacer(minLength: 0)
-          Button("Set Up OpenMaskit") {
-            if let image = model.releaseImage {
-              Task {
-                await model.action(
-                  ["setup", "--image", image],
-                  success: "Installation prepared. Choose Start Services.")
-              }
-            } else {
-              model.message =
-                "This development build needs a published relay image. See the source setup instructions."
-            }
-          }
-          .buttonStyle(CompanionButtonStyle(kind: .primary))
-        }
-      } else {
-        if model.installation.services.isEmpty {
-          Text("Services are stopped.").foregroundStyle(CompanionTheme.secondary)
-        }
-        ForEach(model.installation.services) { service in
-          HStack(spacing: 8) {
-            Circle().fill(service.health == "healthy" ? CompanionTheme.green : CompanionTheme.muted)
-              .frame(width: 6, height: 6)
-            Text(service.title)
-            Spacer()
-            Text(service.health.isEmpty ? service.state : service.health)
-              .font(.system(size: 11, design: .monospaced))
-              .foregroundStyle(CompanionTheme.secondary)
-          }
-        }
-        HStack(spacing: 8) {
-          Button("Start Services") {
-            Task { await model.action(["start"], success: "Services are ready.") }
-          }.buttonStyle(CompanionButtonStyle(kind: .primary))
-          Button("Stop Services") {
-            Task {
-              await model.action(["stop"], success: "Services stopped. Your settings are saved.")
-            }
-          }.buttonStyle(CompanionButtonStyle(kind: .danger))
-          Spacer()
-          Button("Open OpenMaskit") {
-            NSWorkspace.shared.open(URL(string: "http://127.0.0.1:9493")!)
-          }.buttonStyle(CompanionButtonStyle())
-        }
-      }
-    }
-    .disabled(model.busy)
-  }
-
-  private var localMCPs: some View {
     CompanionPanel("Local MCPs", detail: "\(model.profiles.count) approved") {
-      HStack(spacing: 8) {
-        Circle().fill(model.installation.paired ? CompanionTheme.teal : CompanionTheme.muted)
-          .frame(width: 6, height: 6)
+      if model.installation.mode == .existing {
+        Text("Manage your existing MCP servers in the OpenMaskit dashboard.")
+          .foregroundStyle(CompanionTheme.secondary)
+        Button("Open OpenMaskit") { Task { await model.openDashboard() } }
+          .buttonStyle(CompanionButtonStyle()).disabled(!model.installation.canOpenDashboard)
+      } else {
         Text(
-          model.installation.paired
-            ? "This Mac is paired."
-            : "Pair this Mac to connect your approved local MCPs."
+          "Approve programs on this Mac, then add their connections to OpenMaskit. Configure privacy rules in its dashboard."
         )
-        .foregroundStyle(CompanionTheme.secondary)
-      }
-      HStack(spacing: 8) {
-        Button(model.installation.paired ? "Pair Again" : "Pair This Mac") {
-          Task { await model.pair() }
-        }
-        .disabled(!model.installation.initialized)
-        .buttonStyle(CompanionButtonStyle())
+        .foregroundStyle(CompanionTheme.secondary).fixedSize(horizontal: false, vertical: true)
         Button("Add Local MCP…") { model.approve() }
           .buttonStyle(CompanionButtonStyle(kind: .primary))
-        Spacer()
-        Button(model.connectorRunning ? "Stop Connector" : "Start Connector") {
-          model.toggleConnector()
+          .disabled(!model.installation.paired || !model.installation.ready)
+        if model.profiles.isEmpty {
+          Text("No local MCP profiles added yet.").foregroundStyle(CompanionTheme.secondary)
         }
-        .disabled(!model.installation.paired)
-        .buttonStyle(CompanionButtonStyle())
-      }
-      if model.profiles.isEmpty {
-        Text("No local MCP profiles added yet.")
-          .font(.system(size: 11)).foregroundStyle(CompanionTheme.muted)
-      }
-      ForEach(model.profiles) { profile in
-        HStack(spacing: 8) {
-          Image(systemName: "checkmark.shield").foregroundStyle(CompanionTheme.teal)
-          Text(profile.name).lineLimit(2)
-          Spacer()
-          Button("Add to OpenMaskit") {
-            Task {
-              await model.action(
-                ["register", profile.id, "--name", profile.name],
-                success: "MCP added. Configure its checks in OpenMaskit.")
+        ForEach(model.profiles) { profile in
+          HStack {
+            Label(profile.name, systemImage: "checkmark.shield")
+            Spacer()
+            Button("Add to OpenMaskit") {
+              Task {
+                await model.action(
+                  ["register", profile.id, "--name", profile.name],
+                  success: "MCP added. Configure its checks in OpenMaskit.")
+              }
             }
+            .buttonStyle(CompanionButtonStyle())
+            .disabled(!model.connectorRunning || !model.installation.canUseLocalConnector)
           }
-          .disabled(!model.connectorRunning)
-          .buttonStyle(CompanionButtonStyle())
         }
       }
-      ForEach(model.installation.connectors ?? []) { connector in
-        Label(
-          connector.name + (connector.connected ? " · Connected" : " · Offline"),
-          systemImage: connector.connected ? "link" : "link.badge.plus"
-        )
-        .font(.system(size: 11))
-        .foregroundStyle(connector.connected ? CompanionTheme.green : CompanionTheme.secondary)
-      }
-    }
-    .disabled(model.busy)
-  }
-
-  private var footer: some View {
-    HStack(spacing: 8) {
-      if model.busy {
-        ProgressView().controlSize(.mini)
-        Text("Working…")
-      } else {
-        Image(systemName: "arrow.triangle.2.circlepath")
-        Text("Manual updates")
-      }
-      Spacer()
-      Button("Refresh") { Task { await model.refresh() } }
-        .disabled(model.busy).buttonStyle(CompanionButtonStyle())
-      SettingsLink { Label("Settings", systemImage: "gearshape") }
-        .buttonStyle(CompanionButtonStyle())
-    }
-    .font(.system(size: 11)).foregroundStyle(CompanionTheme.secondary)
-    .padding(.horizontal, 16).padding(.vertical, 10)
-    .background(CompanionTheme.surface)
-  }
-
-  private func notice(_ text: String, color: Color) -> some View {
-    Text(text).font(.system(size: 11)).foregroundStyle(color)
-      .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+    }.disabled(model.busy)
   }
 }

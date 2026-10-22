@@ -18,3 +18,16 @@ subprocess.run(
     check=True,
 )
 subprocess.run([str(binary)], check=True)
+
+installation_binary = runtime / "installation-policy-check"
+subprocess.run(
+    [
+        "swiftc",
+        str(root / "desktop/macos/Sources/CompanionPolicy/InstallationState.swift"),
+        str(root / "desktop/macos/Acceptance/InstallationAcceptance.swift"),
+        "-o",
+        str(installation_binary),
+    ],
+    check=True,
+)
+subprocess.run([str(installation_binary)], check=True)
