@@ -12,9 +12,12 @@ signed and notarized. Automatic installation, login startup and automatic
 updates are not enabled.
 
 Companion is a **menu bar app**. Its menu bar icon is always available while
-it runs; a configured launch opens no main window. Status, Open Dashboard,
-Start All and Stop All are in the menu. Onboarding and Settings are its only
-windows. Closing either hides the Dock icon and keeps the menu bar item and
+it runs; a configured launch opens no main window. The compact menu shows one
+status line, Open Dashboard, a Services submenu, Settings and Quit. Services
+contains start/stop controls and shortcuts to service details and Local MCP
+settings. Detailed health, repair instructions and progress stay in Settings;
+an attention status in the menu opens those details. Onboarding and Settings
+are its only windows. Closing either hides the Dock icon and keeps the menu bar item and
 services available. Reopen Settings or quit from the menu. Local MCP approval
 and registration are under **Settings → Local MCPs**.
 Only one Companion process runs per account, including copies opened from

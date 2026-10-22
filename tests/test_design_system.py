@@ -53,6 +53,7 @@ def test_production_views_use_shared_native_components_and_semantic_values():
 def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     app = (MAC / "Sources/OpenMaskitCompanion/App.swift").read_text()
     settings = (MAC / "Sources/OpenMaskitCompanion/Settings.swift").read_text()
+    menu = (MAC / "Sources/OpenMaskitCompanion/Menu.swift").read_text()
     windows = (MAC / "Sources/OpenMaskitCompanion/Windows.swift").read_text()
     assert 'MenuBarExtra("OpenMaskit Companion", systemImage: "link")' in app
     assert "isInserted:" not in app
@@ -62,7 +63,7 @@ def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     assert "AppPreferences" in app
     assert "NSWindowDelegate" in windows
     assert "preferences.windowClosed()" in windows
-    assert 'keyboardShortcut("q")' in settings
+    assert 'keyboardShortcut("q")' in menu
     assert 'Window("OpenMaskit Companion"' not in app
     assert "model.startMonitoring(preferences: preferences)" in app
     assert 'Button("Start All")' in settings and 'Button("Stop All")' in settings
@@ -70,6 +71,30 @@ def test_native_window_and_menu_lifecycle_stays_owned_by_the_app():
     assert "reopenRunningApp" in app
     assert "private var settings: CompanionWindow?" in app
     assert "private var onboarding: CompanionWindow?" in app
+
+
+def test_menu_keeps_everyday_actions_at_root_and_details_in_settings():
+    menu = (MAC / "Sources/OpenMaskitCompanion/Menu.swift").read_text()
+    body = menu[
+        menu.index("var body: some View") : menu.index("private var serviceControls")
+    ]
+    controls = menu[menu.index("private var serviceControls") :]
+    assert 'Button("Open Dashboard")' in body
+    assert 'Menu("Services") { serviceControls }' in body
+    assert 'Button("Settings…")' in body
+    assert 'Button("Quit OpenMaskit Companion")' in body
+    assert 'Button("Start All")' not in body
+    assert 'Button("Stop All")' not in body
+    assert 'Button("Local MCP Settings…")' not in body
+    assert 'Button("Start All")' in controls
+    assert 'Button("Stop All")' in controls
+    assert 'Button("Service Details…")' in controls
+    assert 'model.settingsSection = "mcps"' in controls
+    assert 'model.settingsSection = "installation"' in controls
+    assert "model.progress" not in menu
+    assert "Text(model.message)" not in menu
+    assert "ForEach(model.installation.services)" not in menu
+    assert 'Button("Refresh Status")' not in menu
 
 
 def test_app_identity_stays_single_instance_and_menu_first(tmp_path):
