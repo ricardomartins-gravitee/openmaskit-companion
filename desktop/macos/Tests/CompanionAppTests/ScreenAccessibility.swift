@@ -27,6 +27,12 @@ import AppKit
     {
       children.append(contentsOf: ordered)
     }
+    // Scroll areas expose their primary elements as AXContents as well as children.
+    children.append(
+      contentsOf: attribute("accessibilityContents", legacy: .contents) as? [Any] ?? [])
+    children.append(
+      contentsOf: attribute("accessibilityVisibleChildren", legacy: .visibleChildren) as? [Any]
+        ?? [])
     return children
   }
   func accessibilityLabel() -> String? {
@@ -53,6 +59,9 @@ import AppKit
     let selector = NSSelectorFromString("accessibilityPerformPress")
     guard object.responds(to: selector) else { return false }
     return object.value(forKey: "accessibilityPerformPress") as? Bool ?? false
+  }
+  var supportsPress: Bool {
+    object.responds(to: NSSelectorFromString("accessibilityPerformPress"))
   }
   func setAccessibilityValue(_ value: String) {
     if object.responds(to: NSSelectorFromString("setAccessibilityValue:")) {

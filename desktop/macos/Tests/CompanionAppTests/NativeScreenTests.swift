@@ -82,8 +82,10 @@ import XCTest
 
   func press(_ element: ScreenAccessibility) {
     XCTAssertTrue(element.isAccessibilityEnabled())
-    XCTAssertTrue(
-      element.accessibilityPerformPress(), "The native control does not expose a press action")
+    XCTAssertTrue(element.supportsPress, "The native control does not expose a press action")
+    // Segmented controls can report false after changing selection. Each caller
+    // waits for and verifies the actual binding/backend effect of the action.
+    _ = element.accessibilityPerformPress()
   }
 
   func snapshot(_ name: String) throws {
@@ -128,7 +130,9 @@ import XCTest
       f.close()
     }
     try await f.waitFor { screen.allText.contains("Keep your existing OpenMaskit") }
-    let address = try screen.element(id: "setup.address")
+    // AppKit's bridged text-field cell does not forward SwiftUI identifiers on
+    // every supported OS. Locate the unique visible field by role and value.
+    let address = try screen.element(named: "http://127.0.0.1:9473", role: .textField)
     XCTAssertEqual(address.accessibilityRole(), .textField)
     address.setAccessibilityValue("http://127.0.0.1:19476")
     try await f.waitFor { (address.accessibilityValue() as? String) == "http://127.0.0.1:19476" }
