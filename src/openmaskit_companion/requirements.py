@@ -16,11 +16,11 @@ def desktop_installed():
     )
 
 
-def command_ready(arguments, *, flags=()):
+def command_ready(arguments, *, flags=(), environment=None):
     try:
         # Fixed Docker subcommands; callers first validate the local context.
         result = subprocess.run(  # nosec B603
-            arguments, capture_output=True, text=True, timeout=5
+            arguments, capture_output=True, text=True, timeout=5, env=environment
         )
         return result.returncode == 0 and all(
             flag in result.stdout.split() for flag in flags
@@ -29,7 +29,8 @@ def command_ready(arguments, *, flags=()):
         return False
 
 
-def check(find_binary, validate_context):
+def check(find_binary, validate_context, *, environment=None):
+    environment = os.environ if environment is None else environment
     checks = []
 
     def record(key, title, ready, detail, *, blocked=False):
@@ -66,7 +67,7 @@ def check(find_binary, validate_context):
     local = False
     if desktop and binary:
         try:
-            validate_context(binary, os.environ)
+            validate_context(binary, environment)
             local = True
         except (ValueError, OSError, subprocess.TimeoutExpired):
             pass
@@ -80,6 +81,7 @@ def check(find_binary, validate_context):
     compose = local and command_ready(
         [binary, "compose", "up", "--help"],
         flags=("--wait", "--wait-timeout", "--pull"),
+        environment=environment,
     )
     record(
         "compose",
@@ -88,7 +90,9 @@ def check(find_binary, validate_context):
         "Install or update Docker Desktop to include current Docker Compose tools.",
         blocked=not local,
     )
-    daemon = local and command_ready([binary, "info", "--format", "{{.ServerVersion}}"])
+    daemon = local and command_ready(
+        [binary, "info", "--format", "{{.ServerVersion}}"], environment=environment
+    )
     record(
         "daemon",
         "Docker engine",

@@ -55,6 +55,9 @@ connect to OpenMaskit, never directly to the relay. No Docker socket is mounted.
 Companion uses your standard Docker Desktop installation and its Docker Compose
 tools. It manages one dedicated Compose project on this Mac. Installation and
 connection choices are available in onboarding and Settings.
+Companion's macOS commands use their own Docker Desktop connection, without
+changing the active context used by your terminal or other projects. Explicit
+`DOCKER_CONTEXT` or `DOCKER_HOST` overrides must still select a local connection.
 
 ## Run from source
 

@@ -106,6 +106,11 @@ the relay also joins the dedicated host-facing network required for loopback
 port publishing. OpenMaskit retains outbound access for its HTTP MCP targets.
 Only the host manager invokes Docker, using argument arrays and fixed project
 files. No container gets the Docker socket.
+On macOS, these commands default to Docker Desktop's `desktop-linux` context in
+their own child-process environment. Prerequisite validation, daemon probes and
+Compose use that same connection. The user's global Docker configuration is not
+rewritten. Explicit context/host overrides retain Docker's context precedence
+and are validated as local before any daemon or lifecycle operation.
 
 Existing installations keep their state, project marker, volume, service names
 and running containers. Moving relay-image ownership to the connector repository

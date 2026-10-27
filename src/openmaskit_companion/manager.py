@@ -10,6 +10,7 @@ import shutil
 
 # Docker lifecycle management requires fixed-argument subprocess calls.
 import subprocess  # nosec B404
+import sys
 import time
 from importlib.resources import files
 from pathlib import Path
@@ -48,7 +49,23 @@ def docker_binary():
 
 
 def prerequisites():
-    return requirements.check(docker_binary, local_docker)
+    return requirements.check(
+        docker_binary, local_docker, environment=docker_environment()
+    )
+
+
+def docker_environment():
+    environment = dict(os.environ)
+    # This macOS product manages Docker Desktop. Scope its default connection to
+    # these child commands, leaving the user's terminal context/config untouched.
+    # Explicit overrides still pass through the local-only validation below.
+    if (
+        sys.platform == "darwin"
+        and not environment.get("DOCKER_CONTEXT")
+        and not environment.get("DOCKER_HOST")
+    ):
+        environment["DOCKER_CONTEXT"] = "desktop-linux"
+    return environment
 
 
 def local_docker(binary, environment):
@@ -142,7 +159,7 @@ def compose(home: Path, *arguments, timeout=360):
     binary = docker_binary()
     environment = {
         key: value
-        for key, value in os.environ.items()
+        for key, value in docker_environment().items()
         if key
         not in {
             "OPENMASKIT_IMAGE",
@@ -303,7 +320,8 @@ def admin(home: Path, method, path, body=None):
 def docker_ready(home):
     installation.require_configured_managed(home)
     binary = docker_binary()
-    local_docker(binary, os.environ)
+    environment = docker_environment()
+    local_docker(binary, environment)
     try:
         # Read-only daemon probe, after rejecting remote Docker contexts.
         result = subprocess.run(  # nosec B603
@@ -311,6 +329,7 @@ def docker_ready(home):
             capture_output=True,
             text=True,
             timeout=5,
+            env=environment,
         )
         return {"ready": result.returncode == 0}
     except (OSError, subprocess.TimeoutExpired):
