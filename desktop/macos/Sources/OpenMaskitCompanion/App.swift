@@ -45,17 +45,26 @@ struct LocalProfile: Codable, Identifiable {
   private let imageOverride: String?
   private let dashboardOpener: @MainActor (URL) -> Void
   private let dockerOpener: (@MainActor () async throws -> Void)?
+  private let profileChooser: @MainActor () -> URL?
 
   init(
     backend: URL? = nil, home: URL? = nil, image: String? = nil,
     openDashboard: @escaping @MainActor (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
-    openDocker: (@MainActor () async throws -> Void)? = nil
+    openDocker: (@MainActor () async throws -> Void)? = nil,
+    chooseProfile: @escaping @MainActor () -> URL? = {
+      let panel = NSOpenPanel()
+      panel.title = "Choose a local MCP profile"
+      panel.allowedContentTypes = [.json]
+      panel.canChooseDirectories = false
+      return panel.runModal() == .OK ? panel.url : nil
+    }
   ) {
     backendOverride = backend
     homeOverride = home
     imageOverride = image
     dashboardOpener = openDashboard
     dockerOpener = openDocker
+    profileChooser = chooseProfile
   }
 
   func startMonitoring(preferences: AppPreferences) {
@@ -146,7 +155,13 @@ struct LocalProfile: Codable, Identifiable {
         ? try JSONDecoder().decode(ProfileList.self, from: await invoke(["profiles"]))
         : ProfileList(profiles: [])
       guard generation == configurationGeneration && !busy else { return }
+      let previousConnectionIssue = installation.error ?? installation.connectionError
       installation = state
+      if let issue = state.error ?? state.connectionError {
+        message = issue
+      } else if let previousConnectionIssue, message == previousConnectionIssue {
+        message = ""
+      }
       if let runtimeRequirements {
         if let issue = runtimeRequirements.issue {
           message = issue
@@ -491,12 +506,8 @@ struct LocalProfile: Codable, Identifiable {
   }
 
   func approve() {
-    let panel = NSOpenPanel()
-    panel.title = "Choose a local MCP profile"
-    panel.allowedContentTypes = [.json]
-    panel.canChooseDirectories = false
-    guard panel.runModal() == .OK, let url = panel.url,
-      let data = try? Data(contentsOf: url),
+    guard let url = profileChooser() else { return }
+    guard let data = try? Data(contentsOf: url),
       let profile = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
       let command = profile["command"] as? String
     else {
