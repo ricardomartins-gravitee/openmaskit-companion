@@ -235,8 +235,12 @@ private struct SettingsComponentHost: View {
     XCTAssertTrue(screen.allText.contains("Start services and local MCPs when Companion opens"))
     let toggle = try XCTUnwrap(
       screen.elements().first {
-        $0.accessibilityRole() == .checkBox && $0.supportsPress
+        // Modern AppKit exports switches as binary-valued AXButtons; older
+        // releases use AXCheckBox. Window buttons have no binary value.
+        [.button, .checkBox].contains($0.accessibilityRole())
+          && $0.accessibilityValue() is NSNumber && $0.supportsPress
       }, "Missing native startup switch")
+    XCTAssertEqual((toggle.accessibilityValue() as? NSNumber)?.boolValue, true)
     XCTAssertTrue(screen.preferences.automaticallyStartServices)
     screen.press(toggle)
     try await f.waitFor { !screen.preferences.automaticallyStartServices }
