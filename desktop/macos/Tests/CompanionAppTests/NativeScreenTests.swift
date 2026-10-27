@@ -22,7 +22,11 @@ import XCTest
       ? AnyView(CompanionOnboarding(model: model, preferences: preferences))
       : AnyView(SettingsScreen(model: model, preferences: preferences))
     controller = CompanionWindow(
-      title: "Synthetic Companion", content: content, preferences: preferences)
+      title: "Synthetic Companion",
+      // A swift-test host has no external assistive client. Ask SwiftUI to build
+      // its accessibility tree in this synthetic window using its public environment.
+      content: AnyView(content.environment(\.accessibilityEnabled, true)),
+      preferences: preferences)
     if !NSApplication.shared.isRunning { NSApplication.shared.finishLaunching() }
     controller.present()
     controller.window?.contentView?.layoutSubtreeIfNeeded()
