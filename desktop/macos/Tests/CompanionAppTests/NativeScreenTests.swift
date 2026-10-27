@@ -212,6 +212,11 @@ private struct SettingsComponentHost: View {
     try await f.waitFor { screen.allText.contains("Keep your existing OpenMaskit") }
     screen.press(try screen.element(named: "Companion installation", role: .radioButton))
     try await f.waitFor { f.model.requirements?.ready == false && !f.model.checkingRequirements }
+    // Backend completion precedes SwiftUI's next render/accessibility update.
+    // Wait for the screen we exercise, not just its underlying model.
+    try await f.waitFor {
+      screen.allText.contains("Needs attention") && screen.allText.contains("Check Again")
+    }
     XCTAssertFalse(try screen.element(id: "setup.managed").isAccessibilityEnabled())
     XCTAssertTrue(screen.allText.contains("Needs attention"))
     XCTAssertFalse(f.actions.contains("prepare-managed"))
@@ -220,6 +225,11 @@ private struct SettingsComponentHost: View {
     try f.save()
     screen.press(try screen.element(named: "Check Again", role: .button))
     try await f.waitFor { f.model.requirements?.ready == true && !f.model.checkingRequirements }
+    try await f.waitFor {
+      screen.elements().contains {
+        $0.accessibilityIdentifier() == "setup.managed" && $0.isAccessibilityEnabled()
+      }
+    }
     screen.press(try screen.element(id: "setup.managed"))
     try await f.waitFor { f.model.installation.configured && !f.model.busy }
     XCTAssertTrue(f.actions.contains("prepare-managed"))
