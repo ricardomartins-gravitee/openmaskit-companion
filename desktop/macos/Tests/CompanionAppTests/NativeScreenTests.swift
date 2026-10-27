@@ -38,7 +38,7 @@ import XCTest
     var seen = Set<ObjectIdentifier>()
     var output: [ScreenAccessibility] = []
     func visit(_ value: Any) {
-      guard output.count < 10_000, let object = value as? NSObject else {
+      guard output.count < 1_000, let object = value as? NSObject else {
         return
       }
       guard seen.insert(ObjectIdentifier(object)).inserted else { return }
@@ -88,6 +88,16 @@ import XCTest
     _ = element.accessibilityPerformPress()
   }
 
+  func fill(_ element: ScreenAccessibility, value: String) throws {
+    let field = try XCTUnwrap(
+      (element.object as? NSTextField) ?? (element.object as? NSCell)?.controlView as? NSTextField)
+    controller.window?.makeFirstResponder(field)
+    field.stringValue = value
+    field.currentEditor()?.string = value
+    field.delegate?.controlTextDidChange?(
+      Notification(name: NSControl.textDidChangeNotification, object: field))
+  }
+
   func snapshot(_ name: String) throws {
     guard let view = controller.window?.contentView else {
       return XCTFail("Missing native content view")
@@ -134,7 +144,7 @@ import XCTest
     // every supported OS. Locate the unique visible field by role and value.
     let address = try screen.element(named: "http://127.0.0.1:9473", role: .textField)
     XCTAssertEqual(address.accessibilityRole(), .textField)
-    address.setAccessibilityValue("http://127.0.0.1:19476")
+    try screen.fill(address, value: "http://127.0.0.1:19476")
     try await f.waitFor { (address.accessibilityValue() as? String) == "http://127.0.0.1:19476" }
     screen.press(try screen.element(id: "setup.connect"))
     try await f.waitFor { f.actions.contains("status") && !f.model.busy }

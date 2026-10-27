@@ -63,11 +63,14 @@ import XCTest
 
   var actions: [String] { calls().compactMap { $0["action"] as? String } }
 
-  func waitFor(_ condition: () -> Bool, timeout: TimeInterval = 5) async throws {
+  func waitFor(
+    _ condition: () -> Bool, timeout: TimeInterval = 5,
+    file: StaticString = #filePath, line: UInt = #line
+  ) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
     guard condition() else {
-      XCTFail("Synthetic app operation did not finish within its deadline")
+      XCTFail("Synthetic app operation did not finish within its deadline", file: file, line: line)
       throw CocoaError(.fileReadUnknown)
     }
   }
