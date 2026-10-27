@@ -7,7 +7,7 @@ that every platform or failure is covered.
 
 | Layer | Executable checks | Evidence |
 | --- | --- | --- |
-| Native screens | Render onboarding, Installation, Local MCPs and General; press native accessibility controls; edit the address; toggle startup; test busy/error/disabled states | XCTest and synthetic PNG snapshots on Apple Silicon and Intel |
+| Native screens/components | Render full Settings with its real bounded scroll container; independently host the same section selector/content components and onboarding; drive their native controls, edit the address, toggle startup and verify busy/error/disabled states | XCTest and synthetic PNG snapshots on Apple Silicon and Intel |
 | Native model | Real bounded helper processes with fixture responses; setup, attachment, registration, dashboard validation, stale refresh races, duplicate submissions, missing Docker and repair | XCTest |
 | App lifecycle | Onboarding completion, configured menu-only launch, reopening one Settings window, closing the last window, Quit stopping the owned connector | XCTest with an isolated model and defaults domain |
 | Backend | CLI routes, persistent selection, local origins, scoped Docker commands, prerequisite failures, registration, protocol keepalive, credentials and error redaction | pytest, JUnit and statement/branch reports |
@@ -35,8 +35,14 @@ cross-process and Docker checks provide additional behavioral evidence.
 
 ## Explicit boundaries
 
-In-process accessibility actions exercise the app's own rendered controls. They
-do not certify VoiceOver's complete interaction model, every keyboard setting,
+In-process actions exercise the app's own rendered components. The headless
+runner exposes onboarding and menu controls, but does not populate the nested
+SwiftUI Settings scroll-content accessibility tree. Settings control tests host
+the same production selector/content components directly; separate tests render
+the full scroll window and check its bounded layout. No alternate action logic
+or test-only branch is added to the app. Live scrolling, focus across the scroll
+boundary and accessibility traversal through that container remain acceptance
+checks. These suites do not certify VoiceOver's complete interaction model, every keyboard setting,
 the OS's menu-bar overflow behavior or system-owned file/permission dialogs.
 Those remain focused interactive acceptance checks. The app's menu states,
 action guards, controller routing and permanent menu policy have automated tests.

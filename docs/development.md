@@ -21,6 +21,9 @@ full immutable Git source revision in `uv.lock`. The app bundles its executable
 and passes the existing companion state directory to connector commands. Keep
 the CLI delegation and app bundle launch behavior covered by synthetic tests.
 
+See [the automated coverage matrix](test-coverage.md) for executable gates,
+retained reports and the explicit native UI boundaries.
+
 ## CI and acceptance
 
 Companion product builds and tests run on Apple Silicon and Intel macOS. There

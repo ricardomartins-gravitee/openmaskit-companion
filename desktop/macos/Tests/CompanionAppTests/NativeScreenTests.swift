@@ -6,6 +6,23 @@ import XCTest
 
 @testable import OpenMaskitCompanion
 
+/// The actual production components, hosted without the OS-owned scroll container.
+private struct SettingsComponentHost: View {
+  @ObservedObject var model: CompanionModel
+  @ObservedObject var preferences: AppPreferences
+  var body: some View {
+    VStack(spacing: CompanionTokens.spaceMd) {
+      SettingsSectionPicker(model: model)
+      SettingsContents(model: model, preferences: preferences)
+    }
+    .toggleStyle(.switch).controlSize(.small)
+    .font(CompanionTypography.body).foregroundStyle(CompanionTheme.text)
+    .tint(CompanionTheme.accent).padding(CompanionTokens.spaceLg)
+    .frame(width: 620).fixedSize(horizontal: false, vertical: true)
+    .background(CompanionTheme.root).preferredColorScheme(.dark)
+  }
+}
+
 /// In-process native UI testing: operates only on synthetic windows owned by this test process.
 @MainActor private final class TestScreen {
   let controller: CompanionWindow
@@ -14,13 +31,17 @@ import XCTest
   let suite = "companion-screen-" + UUID().uuidString
   let originalPolicy = NSApplication.shared.activationPolicy()
 
-  init(model: CompanionModel, onboarding: Bool = false) {
+  init(model: CompanionModel, onboarding: Bool = false, fullSettings: Bool = false) {
     defaults = UserDefaults(suiteName: suite)!
     preferences = AppPreferences(defaults: defaults, activate: {})
-    let content: AnyView =
-      onboarding
-      ? AnyView(CompanionOnboarding(model: model, preferences: preferences))
-      : AnyView(SettingsScreen(model: model, preferences: preferences))
+    let content: AnyView
+    if onboarding {
+      content = AnyView(CompanionOnboarding(model: model, preferences: preferences))
+    } else if fullSettings {
+      content = AnyView(SettingsScreen(model: model, preferences: preferences))
+    } else {
+      content = AnyView(SettingsComponentHost(model: model, preferences: preferences))
+    }
     controller = CompanionWindow(
       title: "Synthetic Companion",
       // A swift-test host has no external assistive client. Ask SwiftUI to build
@@ -131,6 +152,24 @@ import XCTest
 }
 
 @MainActor final class NativeScreenTests: XCTestCase {
+  func testFullSettingsWindowRendersBoundedScrollLayoutForEverySection() async throws {
+    let f = try AppTestFixture()
+    try f.loadManaged()
+    defer { f.close() }
+    for section in ["installation", "mcps", "general"] {
+      f.model.settingsSection = section
+      let screen = TestScreen(model: f.model, fullSettings: true)
+      defer { screen.close() }
+      try await f.waitFor {
+        screen.elements().contains { $0.object is NSScrollView }
+      }
+      let content = try XCTUnwrap(screen.controller.window?.contentView)
+      XCTAssertLessThanOrEqual(content.bounds.height, NSScreen.main?.visibleFrame.height ?? 1200)
+      try screen.snapshot("full-settings-" + section)
+    }
+    XCTAssertTrue(f.actions.allSatisfy { $0 == "prerequisites" })
+  }
+
   func testOnboardingConnectUsesTheRenderedTextFieldAndButton() async throws {
     let f = try AppTestFixture()
     f.model.hasLoaded = true
@@ -193,7 +232,11 @@ import XCTest
     try await f.waitFor { screen.allText.contains("Current installation") }
     screen.press(try screen.element(named: "General", role: .radioButton))
     try await f.waitFor { screen.allText.contains("Startup & updates") }
-    let toggle = try screen.element(id: "settings.autoStart")
+    XCTAssertTrue(screen.allText.contains("Start services and local MCPs when Companion opens"))
+    let toggle = try XCTUnwrap(
+      screen.elements().first {
+        $0.accessibilityRole() == .checkBox && $0.supportsPress
+      }, "Missing native startup switch")
     XCTAssertTrue(screen.preferences.automaticallyStartServices)
     screen.press(toggle)
     try await f.waitFor { !screen.preferences.automaticallyStartServices }
