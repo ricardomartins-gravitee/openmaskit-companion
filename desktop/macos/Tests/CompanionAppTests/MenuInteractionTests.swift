@@ -5,6 +5,7 @@ import XCTest
 
 @testable import OpenMaskitCompanion
 
+@available(macOS 14.4, *)
 @MainActor private final class TestMenu {
   let menu: NSHostingMenu<CompanionMenu>
   let preferences: AppPreferences
@@ -36,6 +37,9 @@ import XCTest
 
 @MainActor final class MenuInteractionTests: XCTestCase {
   func testManagedMenuKeepsServiceActionsInASubmenuAndDisablesBusyActions() async throws {
+    guard #available(macOS 14.4, *) else {
+      return XCTFail("The native menu test host requires macOS 14.4 or later")
+    }
     let f = try AppTestFixture()
     try f.loadManaged()
     let host = TestMenu(model: f.model)
@@ -79,6 +83,9 @@ import XCTest
   }
 
   func testNativeMenuRoutesSettingsAndSubmenuItemsToTheCorrectSection() async throws {
+    guard #available(macOS 14.4, *) else {
+      return XCTFail("The native menu test host requires macOS 14.4 or later")
+    }
     let f = try AppTestFixture()
     try f.loadManaged()
     var opened = 0
@@ -105,6 +112,9 @@ import XCTest
   }
 
   func testExternalMenuOmitsServiceAdministrationAndVerifiesDashboardBeforeOpening() async throws {
+    guard #available(macOS 14.4, *) else {
+      return XCTFail("The native menu test host requires macOS 14.4 or later")
+    }
     let f = try AppTestFixture()
     await f.model.refresh()
     f.replies["dashboard"] = ["body": ["ready": true, "dashboard": "http://127.0.0.1:19473"]]
