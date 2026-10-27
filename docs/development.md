@@ -86,6 +86,22 @@ the last window switches to accessory presentation (no Dock icon), and a second
 open Companion window prevents premature Dock hiding. The menu scene is
 unconditional and is covered by the application contract and policy tests.
 
+Package tests additionally compile a synthetic native executable and exercise
+real macOS code signatures. A linker-only signature must fail bundle acceptance;
+the complete bundle must bind Companion's stable identifier, metadata and
+resources. Metadata/resource tampering and a mismatched signing identifier must
+fail. Archive creation rejects an unbound or modified bundle, and a valid bundle
+must retain its signature after archive/extraction. These checks run on both
+macOS packaging hosts. The development signature is ad hoc, without Developer ID
+certification or notarization.
+
+Live menu acceptance must verify the actual status item after closing Settings,
+including any menu-bar manager and macOS's native overflow. A menu policy test or
+a running background process alone does not prove the icon is visible. Launch the
+installed copy through Finder from its stable Applications location when checking
+LaunchServices-dependent menu-bar management, and do not change system or
+menu-manager preferences as an incidental test step.
+
 Prerequisite tests simulate removed Docker Desktop, missing command tools,
 remote/broken contexts, missing or incompatible Compose, stopped engines and
 recovery. They never uninstall or stop the developer's Docker. Checks are

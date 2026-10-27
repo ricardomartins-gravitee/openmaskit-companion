@@ -5,6 +5,8 @@ import platform
 import subprocess
 from pathlib import Path
 
+from bundle import verify_development_bundle
+
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "dist/OpenMaskit Companion.app"
 
@@ -14,6 +16,7 @@ def main():
         raise RuntimeError("The companion app archive can only be made on macOS")
     if not APP.is_dir():
         raise FileNotFoundError("The tested companion app bundle is missing")
+    verify_development_bundle(APP)
     downloads = ROOT / "dist/downloads"
     downloads.mkdir(parents=True, exist_ok=True)
     label = platform.machine().lower()

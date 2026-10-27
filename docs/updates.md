@@ -35,7 +35,14 @@ Any future update mechanism must:
 6. On failure, restore the prior compatible image and complete state snapshot.
    If recovery cannot be verified, stop and provide a clear recovery action.
 
-Native app distribution also requires platform signing and notarization.
+Every development bundle is signed ad hoc after all its files are assembled.
+The code-signing identifier must match `CFBundleIdentifier`; its `Info.plist` and
+resources must be covered by the signature. Both packaged acceptance and archive
+creation verify this identity and reject missing seals or modified contents.
+The Swift linker's standalone executable signature alone is insufficient for an
+application bundle. Archive/extraction acceptance checks the final seal too.
+
+Native app distribution also requires Developer ID signing and notarization.
 Development artifacts must not claim production signing. Any future automatic
 update or login-start behavior requires a separate local user choice. No cron
 job, scheduled task or unrelated container updater is installed.

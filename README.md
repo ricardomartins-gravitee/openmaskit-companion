@@ -8,7 +8,9 @@ This is a separate project, not a renamed OpenMaskit distribution, and is not
 endorsed by upstream.
 
 **Development alpha.** The macOS application is a development build until
-signed and notarized. Automatic installation, login startup and automatic
+Developer ID signed and notarized. Development bundles have an ad hoc signature
+that binds their app identity, metadata and resources; it does not establish a
+publisher identity or replace notarization. Automatic installation, login startup and automatic
 updates are not enabled.
 
 Companion is a **menu bar app**. Its menu bar icon is always available while
