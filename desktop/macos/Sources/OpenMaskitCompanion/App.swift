@@ -541,6 +541,7 @@ struct LocalProfile: Codable, Identifiable {
   private let beginMonitoring: @MainActor (CompanionModel, AppPreferences) -> Void
   private var onboarding: CompanionWindow?
   private var settings: CompanionWindow?
+  let menuBar: CompanionStatusItem
 
   override convenience init() {
     self.init(model: CompanionRuntime.model, preferences: CompanionRuntime.preferences)
@@ -554,11 +555,13 @@ struct LocalProfile: Codable, Identifiable {
   ) {
     self.model = model
     self.preferences = preferences
+    menuBar = CompanionStatusItem(model: model, preferences: preferences)
     self.beginMonitoring = beginMonitoring
     super.init()
   }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    menuBar.start()
     DistributedNotificationCenter.default().addObserver(
       self, selector: #selector(reopenRunningApp(_:)),
       name: CompanionInstance.reopenNotification,
@@ -595,6 +598,7 @@ struct LocalProfile: Codable, Identifiable {
     return false
   }
   func applicationWillTerminate(_ notification: Notification) {
+    menuBar.stop()
     DistributedNotificationCenter.default().removeObserver(self)
     MainActor.assumeIsolated { model.stopConnector() }
   }
@@ -640,9 +644,7 @@ struct LocalProfile: Codable, Identifiable {
   init() { CompanionInstance.enforce() }
 
   var body: some Scene {
-    MenuBarExtra("OpenMaskit Companion", systemImage: "link") {
-      CompanionMenu(model: model, preferences: preferences)
-    }.menuBarExtraStyle(.menu)
+    Settings { EmptyView() }
       .commands {
         CommandGroup(replacing: .appSettings) {
           Button("Settings…") { model.showSettings?() }.keyboardShortcut(",")

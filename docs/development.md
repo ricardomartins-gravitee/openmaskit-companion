@@ -83,8 +83,18 @@ without XCTest, `scripts/test_macos_policy.py` and
 The application test target also exercises the actual Settings/onboarding window
 controller against AppKit: presenting a window uses regular presentation, closing
 the last window switches to accessory presentation (no Dock icon), and a second
-open Companion window prevents premature Dock hiding. The menu scene is
-unconditional and is covered by the application contract and policy tests.
+open Companion window prevents premature Dock hiding. Tests exercise the actual
+AppKit status item, including single-item retention across close/reopen, native
+menu actions and disabled/stale actions, and explicit removal on termination.
+The item is owned by the application delegate rather than a SwiftUI menu scene.
+
+Packaged acceptance also launches the real app executable with an isolated home
+and synthetic existing-mode backend. It first returns an unconfigured selection,
+then completes setup: the production coordinator closes onboarding and the app
+must keep refreshing in the background. Unexpected backend operations, early exit
+or a timeout fail the check. It refuses to run while another Companion holds the
+single-instance lock. This test runs in both Mac packaging jobs and does not
+certify visual icon placement or menu-manager compatibility.
 
 Package tests additionally compile a synthetic native executable and exercise
 real macOS code signatures. A linker-only signature must fail bundle acceptance;

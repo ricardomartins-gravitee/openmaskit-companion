@@ -19,3 +19,9 @@ subprocess.run(
     env={**os.environ, "COMPANION_BINARY": str(CONNECTOR)},
     check=True,
 )
+subprocess.run(
+    [sys.executable, str(ROOT / "scripts/test_bundle_desktop.py"), "--app", str(APP)],
+    cwd=ROOT,
+    check=True,
+    timeout=90,
+)

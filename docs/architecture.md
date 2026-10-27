@@ -124,7 +124,10 @@ app stops the local host connector; it does not stop managed containers.
 The native app starts as an accessory application. It has no configured main
 dashboard window; native AppKit window controllers host SwiftUI onboarding and
 Settings only. Dock reopening opens Settings (or unfinished onboarding). The
-menu bar item is unconditional and is available throughout onboarding, Settings
+menu bar item is created and retained by the application delegate as a native
+`NSStatusItem`, independently of SwiftUI scene/window lifetime. Its menu refreshes
+from the current model whenever opened; it does not opt into removal-triggered
+application termination. The item is available throughout onboarding, Settings
 and background operation. Closing the last window always switches to accessory
 presentation and hides the Dock icon. Retired visibility preferences are ignored,
 including explicit opt-outs saved by older builds.

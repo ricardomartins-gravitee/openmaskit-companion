@@ -1,13 +1,12 @@
 import AppKit
 import CompanionDesktopCore
-import SwiftUI
 import XCTest
 
 @testable import OpenMaskitCompanion
 
-@available(macOS 14.4, *)
 @MainActor private final class TestMenu {
-  let menu: NSHostingMenu<CompanionMenu>
+  let controller: CompanionStatusItem
+  var menu: NSMenu { controller.menu }
   let preferences: AppPreferences
   let defaults: UserDefaults
   let suite = "companion-menu-" + UUID().uuidString
@@ -16,12 +15,15 @@ import XCTest
     _ = NSApplication.shared
     defaults = UserDefaults(suiteName: suite)!
     preferences = AppPreferences(defaults: defaults, setActivationPolicy: { _ in }, activate: {})
-    menu = NSHostingMenu(rootView: CompanionMenu(model: model, preferences: preferences))
+    controller = CompanionStatusItem(model: model, preferences: preferences)
+    update()
   }
+
+  func update() { controller.menuNeedsUpdate(menu) }
 
   func item(_ title: String, in parent: NSMenu? = nil) throws -> NSMenuItem {
     let parent = parent ?? menu
-    parent.update()
+    if parent === menu { update() }
     return try XCTUnwrap(parent.items.first { $0.title == title }, "Missing menu item: " + title)
   }
 
@@ -37,9 +39,6 @@ import XCTest
 
 @MainActor final class MenuInteractionTests: XCTestCase {
   func testManagedMenuKeepsServiceActionsInASubmenuAndDisablesBusyActions() async throws {
-    guard #available(macOS 14.4, *) else {
-      return XCTFail("The native menu test host requires macOS 14.4 or later")
-    }
     let f = try AppTestFixture()
     try f.loadManaged()
     let host = TestMenu(model: f.model)
@@ -48,7 +47,7 @@ import XCTest
       f.close()
     }
     try await f.waitFor {
-      host.menu.update()
+      host.update()
       return host.menu.items.contains { $0.title == "Settings…" }
     }
     XCTAssertEqual(
@@ -72,7 +71,7 @@ import XCTest
     f.model.busy = true
     f.model.progress = String(repeating: "Synthetic long progress ", count: 50)
     try await f.waitFor {
-      host.menu.update()
+      host.update()
       return host.menu.items.contains { $0.title == "OpenMaskit · Working…" }
     }
     XCTAssertFalse(try host.item("Open Dashboard").isEnabled)
@@ -83,9 +82,6 @@ import XCTest
   }
 
   func testNativeMenuRoutesSettingsAndSubmenuItemsToTheCorrectSection() async throws {
-    guard #available(macOS 14.4, *) else {
-      return XCTFail("The native menu test host requires macOS 14.4 or later")
-    }
     let f = try AppTestFixture()
     try f.loadManaged()
     var opened = 0
@@ -96,7 +92,7 @@ import XCTest
       f.close()
     }
     try await f.waitFor {
-      host.menu.update()
+      host.update()
       return host.menu.items.contains { $0.title == "Services" }
     }
     let services = try XCTUnwrap(host.item("Services").submenu)
@@ -112,9 +108,6 @@ import XCTest
   }
 
   func testExternalMenuOmitsServiceAdministrationAndVerifiesDashboardBeforeOpening() async throws {
-    guard #available(macOS 14.4, *) else {
-      return XCTFail("The native menu test host requires macOS 14.4 or later")
-    }
     let f = try AppTestFixture()
     await f.model.refresh()
     f.replies["dashboard"] = ["body": ["ready": true, "dashboard": "http://127.0.0.1:19473"]]
@@ -125,7 +118,7 @@ import XCTest
       f.close()
     }
     try await f.waitFor {
-      host.menu.update()
+      host.update()
       return host.menu.items.contains { $0.title == "Open Dashboard" }
     }
     XCTAssertFalse(host.menu.items.contains { $0.title == "Services" })
@@ -133,5 +126,43 @@ import XCTest
     try await f.waitFor { !f.opened.isEmpty }
     XCTAssertEqual(f.opened.map(\.absoluteString), ["http://127.0.0.1:19473"])
     XCTAssertEqual(f.actions, ["status", "dashboard"])
+  }
+
+  func testStaleDashboardActionCannotRunAfterTheModelBecomesBusy() async throws {
+    let f = try AppTestFixture()
+    await f.model.refresh()
+    let host = TestMenu(model: f.model)
+    defer {
+      host.close()
+      f.close()
+    }
+    let dashboard = try host.item("Open Dashboard")
+    XCTAssertTrue(dashboard.isEnabled)
+    f.model.busy = true
+    host.menu.performActionForItem(at: host.menu.index(of: dashboard))
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(f.actions, ["status"])
+    XCTAssertTrue(f.opened.isEmpty)
+  }
+
+  func testUnconfiguredMenuReopensSetupWithoutServiceActions() throws {
+    let f = try AppTestFixture()
+    f.model.hasLoaded = true
+    let host = TestMenu(model: f.model)
+    var reopened = 0
+    host.preferences.openMainWindow = { reopened += 1 }
+    defer {
+      host.close()
+      f.close()
+    }
+    XCTAssertEqual(
+      host.menu.items.filter { !$0.isSeparatorItem }.map(\.title),
+      [
+        "OpenMaskit · Setup required", "Set Up OpenMaskit…", "Settings…",
+        "Quit OpenMaskit Companion",
+      ])
+    try host.press("Set Up OpenMaskit…")
+    XCTAssertEqual(reopened, 1)
+    XCTAssertTrue(f.actions.isEmpty)
   }
 }
