@@ -72,6 +72,11 @@ To keep a review build separate from an installed app, use
 image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and
 synthetic health endpoint. Do not attach or change the user's installation as a
 side effect of running tests.
+Keep GUI fixture homes, helper executables (including their interpreter) and
+diagnostic output outside protected Documents, Desktop and Downloads folders;
+use a private temporary directory. Otherwise a test build can trigger macOS
+folder-access prompts unrelated to the packaged product. Do not request broader
+privacy permissions to work around a fixture's location.
 
 The macOS tests cover startup preference persistence and permanent menu availability,
 ignoring all combinations of retired visibility options, closing the window while preserving background operation,
@@ -83,8 +88,40 @@ without XCTest, `scripts/test_macos_policy.py` and
 The application test target also exercises the actual Settings/onboarding window
 controller against AppKit: presenting a window uses regular presentation, closing
 the last window switches to accessory presentation (no Dock icon), and a second
-open Companion window prevents premature Dock hiding. The menu scene is
-unconditional and is covered by the application contract and policy tests.
+open Companion window prevents premature Dock hiding. Tests exercise the actual
+AppKit status item, including single-item retention across close/reopen, native
+menu actions and disabled/stale actions, and explicit removal on termination.
+The item is owned by the application delegate rather than a SwiftUI menu scene.
+
+Packaged acceptance also launches the real app executable with an isolated home
+and synthetic existing-mode backend. It first returns an unconfigured selection,
+then completes setup: the production coordinator closes onboarding and the app
+must keep refreshing in the background. Unexpected backend operations, early exit
+or a timeout fail the check. It refuses to run while another Companion holds the
+single-instance lock. This test runs in both Mac packaging jobs and does not
+certify visual icon placement or menu-manager compatibility.
+
+Package tests additionally compile a synthetic native executable and exercise
+real macOS code signatures. A linker-only signature must fail bundle acceptance;
+the complete bundle must bind Companion's stable identifier, metadata and
+resources. Metadata/resource tampering and a mismatched signing identifier must
+fail. Archive creation rejects an unbound or modified bundle, and a valid bundle
+must retain its signature after archive/extraction. These checks run on both
+macOS packaging hosts. The development signature is ad hoc, without Developer ID
+certification or notarization.
+
+Live menu acceptance must verify the actual status item after closing Settings,
+including any menu-bar manager and macOS's native overflow. A menu policy test or
+a running background process alone does not prove the icon is visible. Launch the
+installed copy through Finder from `/Applications` when checking
+LaunchServices-dependent menu-bar management. Public registration alone does not
+certify that a menu-bar manager will display it. With Dimble 0.3.3 on macOS
+27.0.1, the same signed review bundle was registered in `~/Applications` and
+retained its native item, image and menu, but its status-item window had zero
+height while Dimble ran. Moving that bundle to `/Applications` restored the menu,
+including after restart and closing Settings. This is observed compatibility
+evidence, not a guarantee for every manager or OS version. Do not change system
+or menu-manager preferences as an incidental test step.
 
 Prerequisite tests simulate removed Docker Desktop, missing command tools,
 remote/broken contexts, missing or incompatible Compose, stopped engines and

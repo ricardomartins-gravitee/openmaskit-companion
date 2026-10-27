@@ -8,10 +8,19 @@ This is a separate project, not a renamed OpenMaskit distribution, and is not
 endorsed by upstream.
 
 **Development alpha.** The macOS application is a development build until
-signed and notarized. Automatic installation, login startup and automatic
+Developer ID signed and notarized. Development bundles have an ad hoc signature
+that binds their app identity, metadata and resources; it does not establish a
+publisher identity or replace notarization. Automatic installation, login startup and automatic
 updates are not enabled.
 
-Companion is a **menu bar app**. Its menu bar icon is always available while
+Install the verified bundle as `/Applications/OpenMaskit Companion.app`, then
+open it from Finder. Use the system Applications folder for menu-bar-manager
+compatibility. In acceptance with Dimble 0.3.3 on macOS 27.0.1, a registered
+review app in the personal `~/Applications` folder disappeared while Dimble was
+running; the identical signed bundle worked from `/Applications`. Moving the app
+does not move its saved state in `~/.openmaskit-companion/` or its managed data.
+
+Companion is a **menu bar app**. It retains its menu bar item while
 it runs; a configured launch opens no main window. The compact menu shows one
 status line, Open Dashboard, a Services submenu, Settings and Quit. Services
 contains start/stop controls and shortcuts to service details and Local MCP

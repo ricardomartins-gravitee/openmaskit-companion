@@ -1,4 +1,4 @@
-"""Build a standalone CLI and, on macOS, an explicitly unsigned development app."""
+"""Build a standalone CLI and an ad hoc signed macOS development app."""
 
 import argparse
 import json
@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+APP_IDENTIFIER = "io.github.ricardomartins-gravitee.openmaskit-companion"
 
 
 def copy_app_icons(resources):
@@ -35,7 +36,7 @@ def write_info_plist(app):
     with (app / "Info.plist").open("wb") as out:
         plistlib.dump(
             {
-                "CFBundleIdentifier": "io.github.ricardomartins-gravitee.openmaskit-companion",
+                "CFBundleIdentifier": APP_IDENTIFIER,
                 "CFBundleName": "OpenMaskit Companion",
                 "CFBundleExecutable": "OpenMaskitCompanion",
                 "CFBundlePackageType": "APPL",
@@ -49,6 +50,63 @@ def write_info_plist(app):
             },
             out,
         )
+
+
+def verify_development_bundle(app):
+    """Reject a CLI signature masquerading as a complete application bundle."""
+    with (app / "Contents/Info.plist").open("rb") as source:
+        info = plistlib.load(source)
+    if info.get("CFBundleIdentifier") != APP_IDENTIFIER:
+        raise ValueError("The application bundle identifier does not match Companion")
+    displayed = subprocess.run(
+        ["/usr/bin/codesign", "--display", "--verbose=4", str(app)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stderr.splitlines()
+    if (
+        f"Identifier={APP_IDENTIFIER}" not in displayed
+        or not any(line.startswith("Info.plist entries=") for line in displayed)
+        or not any(line.startswith("Sealed Resources version=") for line in displayed)
+    ):
+        raise ValueError(
+            "Companion needs a bundle signature binding its identity and resources"
+        )
+    subprocess.run(
+        [
+            "/usr/bin/codesign",
+            "--verify",
+            "--strict",
+            "--test-requirement",
+            f'=identifier "{APP_IDENTIFIER}"',
+            str(app),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+
+def sign_development_bundle(app):
+    """Bind the completed development bundle; this is not Developer ID signing."""
+    subprocess.run(
+        [
+            "/usr/bin/codesign",
+            "--force",
+            "--sign",
+            "-",
+            "--identifier",
+            APP_IDENTIFIER,
+            str(app),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    verify_development_bundle(app)
 
 
 def main():
@@ -135,7 +193,10 @@ def main():
         release["companion_image"] = image_digest(args.image)
     (resources / "release.json").write_text(json.dumps(release, indent=2))
     write_info_plist(app)
-    print("Development app built. Not distribution-signed or notarized.")
+    sign_development_bundle(app.parent)
+    print(
+        "Development app built with a verified ad hoc identity. Not Developer ID signed or notarized."
+    )
 
 
 if __name__ == "__main__":

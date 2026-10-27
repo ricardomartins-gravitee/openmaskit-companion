@@ -9,7 +9,7 @@ that every platform or failure is covered.
 | --- | --- | --- |
 | Native screens/components | Render full Settings with its real bounded scroll container; independently host the same section selector/content components and onboarding; drive their native controls, edit the address, toggle startup and verify busy/error/disabled states | XCTest and synthetic PNG snapshots on Apple Silicon and Intel |
 | Native model | Real bounded helper processes with fixture responses; setup, attachment, registration, dashboard validation, stale refresh races, duplicate submissions, missing Docker and repair | XCTest |
-| App lifecycle | Onboarding completion, configured menu-only launch, reopening one Settings window, closing the last window, Quit stopping the owned connector | XCTest with an isolated model and defaults domain |
+| App lifecycle | Onboarding completion, configured menu-only launch, reopening one Settings window, retaining the actual native status item across last-window closure, Quit stopping the owned connector | XCTest with an isolated model and defaults domain, plus packaged native process acceptance with a synthetic backend |
 | Backend | CLI routes, persistent selection, local origins, scoped Docker commands, prerequisite failures, registration, protocol keepalive, credentials and error redaction | pytest, JUnit and statement/branch reports |
 | Connector integration | Pairing, locally approved processes, streamable HTTP, reconnect, no replay, independent sessions and process cleanup | Pinned connector suite and disposable Docker manager acceptance |
 | Privacy and web | Field rules, aliases, Presidio, analyzer outages, server isolation, persistence, browser workflows and real startup | OpenMaskit fork's unit/browser/real-model suites |

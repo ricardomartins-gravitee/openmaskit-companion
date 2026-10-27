@@ -34,6 +34,7 @@ import XCTest
     let f = try AppTestFixture()
     defer { f.close() }
     try await withDelegate(f) { delegate, preferences, starts in
+      let item = try XCTUnwrap(delegate.menuBar.statusItem)
       await f.model.refresh()
       XCTAssertEqual(starts(), 1)
       XCTAssertEqual(NSApp.activationPolicy(), .accessory)
@@ -49,6 +50,10 @@ import XCTest
       settings.close()
       XCTAssertEqual(NSApp.activationPolicy(), .accessory)
       XCTAssertTrue(preferences.menuBarVisible)
+      XCTAssertTrue(delegate.menuBar.statusItem === item)
+      XCTAssertTrue(item.isVisible)
+      XCTAssertTrue(item.menu === delegate.menuBar.menu)
+      XCTAssertEqual(item.behavior, [])
       XCTAssertEqual(starts(), 1, "Reopening Settings must not restart monitoring or services")
     }
   }
@@ -63,6 +68,7 @@ import XCTest
     f.replies["status"] = ["body": fresh]
     try f.save()
     try await withDelegate(f) { delegate, preferences, _ in
+      let item = try XCTUnwrap(delegate.menuBar.statusItem)
       await f.model.refresh()
       let onboarding = try XCTUnwrap(
         NSApp.windows.first { $0.isVisible && $0.title == "Set Up OpenMaskit Companion" })
@@ -73,6 +79,9 @@ import XCTest
       XCTAssertFalse(onboarding.isVisible)
       XCTAssertEqual(NSApp.activationPolicy(), .accessory)
       XCTAssertTrue(preferences.menuBarVisible)
+      XCTAssertTrue(delegate.menuBar.statusItem === item)
+      XCTAssertTrue(item.isVisible)
+      XCTAssertEqual(item.behavior, [])
     }
   }
 
@@ -86,6 +95,7 @@ import XCTest
       delegate.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
       XCTAssertFalse(f.model.connectorRunning)
       XCTAssertFalse(f.model.connectorIsOnline)
+      XCTAssertNil(delegate.menuBar.statusItem)
     }
   }
 }
