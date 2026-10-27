@@ -11,7 +11,6 @@ private struct SettingsHeight: PreferenceKey {
 }
 
 struct SettingsScreen: View {
-  @Environment(\.accessibilityEnabled) private var accessibilityEnabled
   @ObservedObject var model: CompanionModel
   @ObservedObject var preferences: AppPreferences
   @State private var contentHeight: CGFloat = 400
@@ -37,8 +36,6 @@ struct SettingsScreen: View {
           }
         }
         .frame(maxWidth: .infinity)
-        // Scroll content has a separate hosting graph; retain its assistive state.
-        .environment(\.accessibilityEnabled, accessibilityEnabled)
         .background(
           GeometryReader { geometry in
             Color.clear.preference(key: SettingsHeight.self, value: geometry.size.height)
@@ -50,6 +47,7 @@ struct SettingsScreen: View {
       .onPreferenceChange(SettingsHeight.self) { height in
         if height > 0 && abs(contentHeight - height) > 0.5 { contentHeight = height }
       }
+      .accessibilityElement(children: .contain)
     }
     .toggleStyle(.switch).controlSize(.small)
     .font(CompanionTypography.body).foregroundStyle(CompanionTheme.text)
