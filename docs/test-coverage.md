@@ -22,6 +22,11 @@ Backend coverage is checked per module: at least 95% of statements and 90% of
 branches, plus 95% combined overall. A missing module report fails the check.
 The separate counters prevent a strong module from hiding a weak one.
 
+Native tests start before the slower Intel library verification and Docker
+integration. The existing required Mac check names still require successful
+native, integration and packaged-app matrices; failure, cancellation and skipped
+jobs cannot produce a passing gate. The gate's status combinations are tested.
+
 Both Mac jobs instrument Swift tests and retain native coverage plus synthetic
 screen snapshots. Screenshots are review evidence and layout/render checks;
 there is no universal pixel baseline across OS versions, architectures or fonts.
