@@ -23,6 +23,7 @@ import XCTest
       : AnyView(SettingsScreen(model: model, preferences: preferences))
     controller = CompanionWindow(
       title: "Synthetic Companion", content: content, preferences: preferences)
+    if !NSApplication.shared.isRunning { NSApplication.shared.finishLaunching() }
     controller.present()
     controller.window?.contentView?.layoutSubtreeIfNeeded()
     controller.window?.displayIfNeeded()
@@ -103,7 +104,7 @@ import XCTest
   func close() {
     try? snapshot("screen-" + suite)
     if let folder = ProcessInfo.processInfo.environment["COMPANION_SNAPSHOT_DIR"] {
-      try? allText.write(
+      try? elements().map(\.diagnostic).joined(separator: "\n").write(
         to: URL(fileURLWithPath: folder).appendingPathComponent("tree-" + suite + ".txt"),
         atomically: true, encoding: .utf8)
     }

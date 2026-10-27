@@ -6,20 +6,28 @@ import AppKit
   let object: NSObject
 
   private func attribute(_ getter: String, legacy: NSAccessibility.Attribute) -> Any? {
-    if object.responds(to: NSSelectorFromString(getter)) {
-      return object.value(forKey: getter)
-    }
     let names = NSSelectorFromString("accessibilityAttributeNames")
     let value = NSSelectorFromString("accessibilityAttributeValue:")
-    guard object.responds(to: names), object.responds(to: value),
+    if object.responds(to: names), object.responds(to: value),
       let supported = object.perform(names)?.takeUnretainedValue() as? [String],
-      supported.contains(legacy.rawValue)
-    else { return nil }
-    return object.perform(value, with: legacy.rawValue)?.takeUnretainedValue()
+      supported.contains(legacy.rawValue),
+      let result = object.perform(value, with: legacy.rawValue)?.takeUnretainedValue()
+    {
+      return result
+    }
+    guard object.responds(to: NSSelectorFromString(getter)) else { return nil }
+    return object.value(forKey: getter)
   }
 
   func accessibilityChildren() -> [Any]? {
-    attribute("accessibilityChildren", legacy: .children) as? [Any]
+    var children = attribute("accessibilityChildren", legacy: .children) as? [Any] ?? []
+    let navigation = NSSelectorFromString("accessibilityChildrenInNavigationOrder")
+    if object.responds(to: navigation),
+      let ordered = object.value(forKey: "accessibilityChildrenInNavigationOrder") as? [Any]
+    {
+      children.append(contentsOf: ordered)
+    }
+    return children
   }
   func accessibilityLabel() -> String? {
     attribute("accessibilityLabel", legacy: .description) as? String
@@ -50,5 +58,19 @@ import AppKit
     if object.responds(to: NSSelectorFromString("setAccessibilityValue:")) {
       object.setValue(value, forKey: "accessibilityValue")
     }
+  }
+
+  var diagnostic: String {
+    let fields = [
+      "accessibilityLabel", "accessibilityTitle", "accessibilityValue",
+      "accessibilityIdentifier", "accessibilityRole",
+    ]
+    let values = fields.map { field in
+      let value =
+        object.responds(to: NSSelectorFromString(field))
+        ? String(describing: object.value(forKey: field)) : "unsupported"
+      return field + "=" + value
+    }
+    return String(describing: type(of: object)) + " " + values.joined(separator: " | ")
   }
 }
