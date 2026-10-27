@@ -22,6 +22,7 @@ struct SettingsScreen: View {
         Text("Local MCPs").tag("mcps")
         Text("General").tag("general")
       }.pickerStyle(.segmented)
+        .accessibilityIdentifier("settings.section")
       ScrollView {
         VStack(spacing: CompanionTokens.spaceMd) {
           if model.settingsSection == "installation" {
@@ -70,8 +71,10 @@ struct SettingsScreen: View {
         }
         HStack {
           Button("Check Connection") { Task { await model.refresh() } }
+            .accessibilityIdentifier("settings.checkConnection")
             .buttonStyle(CompanionButtonStyle()).disabled(model.busy)
           Button("Open OpenMaskit") { Task { await model.openDashboard() } }
+            .accessibilityIdentifier("settings.dashboard")
             .buttonStyle(CompanionButtonStyle()).disabled(
               !model.installation.canOpenDashboard || model.busy)
         }
@@ -140,7 +143,9 @@ struct SettingsScreen: View {
       CompanionPanel("Startup & updates") {
         Toggle(
           "Start services and local MCPs when Companion opens",
-          isOn: $preferences.automaticallyStartServices)
+          isOn: $preferences.automaticallyStartServices
+        )
+        .accessibilityIdentifier("settings.autoStart")
         Text(
           "Opens Docker Desktop if needed and starts your configured installation and approved local MCPs. A manual stop lasts until the next launch."
         )

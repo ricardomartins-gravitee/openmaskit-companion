@@ -52,7 +52,9 @@ jobs:
       - name: Analyze production Python security
         run: uv run --frozen --no-sync --no-build bandit --recursive src --format json --output bandit.json
       - name: Enforce coverage threshold including branches
-        run: uv run --frozen --no-sync --no-build pytest -q --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+        run: uv run --frozen --no-sync --no-build pytest -q --junitxml=backend-tests.xml --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=json:coverage.json --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+      - name: Require coverage in every backend module, including branches
+        run: uv run --frozen --no-sync --no-build python scripts/check_coverage.py coverage.json
       - name: Export all locked dependencies for auditing
         run: uv export --frozen --all-groups --no-emit-project --no-emit-package openmaskit-connector --format requirements-txt > requirements-audit.txt
       - name: Audit locked runtime and development dependencies
@@ -64,6 +66,8 @@ jobs:
           name: python-quality-reports
           path: |
             coverage.xml
+            coverage.json
+            backend-tests.xml
             htmlcov/
             pip-audit.json
           if-no-files-found: ignore

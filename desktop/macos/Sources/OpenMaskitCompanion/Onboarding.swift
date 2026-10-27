@@ -26,9 +26,11 @@ struct InstallationSetup: View {
           TextField("http://127.0.0.1:9473", text: $address)
             .textFieldStyle(.roundedBorder)
             .accessibilityLabel("Existing OpenMaskit dashboard address")
+            .accessibilityIdentifier("setup.address")
             .onSubmit { Task { await model.connectExisting(address) } }
         }
         Button("Connect to OpenMaskit") { Task { await model.connectExisting(address) } }
+          .accessibilityIdentifier("setup.connect")
           .buttonStyle(CompanionButtonStyle(kind: .primary))
       } else {
         Text(
@@ -51,6 +53,7 @@ struct InstallationSetup: View {
           Task { await model.configureManaged() }
         }
         .buttonStyle(CompanionButtonStyle(kind: .primary))
+        .accessibilityIdentifier("setup.managed")
         .disabled(
           model.requirements?.ready != true || model.checkingRequirements
             || (model.installation.mode == .managed && model.installation.configured

@@ -40,6 +40,23 @@ struct LocalProfile: Codable, Identifiable {
   private var lastKeepAlive = ContinuousClock.now
   private let startup = ServiceStartup()
   private var monitor: Task<Void, Never>?
+  private let backendOverride: URL?
+  private let homeOverride: URL?
+  private let imageOverride: String?
+  private let dashboardOpener: @MainActor (URL) -> Void
+  private let dockerOpener: (@MainActor () async throws -> Void)?
+
+  init(
+    backend: URL? = nil, home: URL? = nil, image: String? = nil,
+    openDashboard: @escaping @MainActor (URL) -> Void = { _ = NSWorkspace.shared.open($0) },
+    openDocker: (@MainActor () async throws -> Void)? = nil
+  ) {
+    backendOverride = backend
+    homeOverride = home
+    imageOverride = image
+    dashboardOpener = openDashboard
+    dockerOpener = openDocker
+  }
 
   func startMonitoring(preferences: AppPreferences) {
     guard monitor == nil else { return }
@@ -55,6 +72,7 @@ struct LocalProfile: Codable, Identifiable {
   }
 
   var backend: URL {
+    if let backendOverride { return backendOverride }
     if let development = ProcessInfo.processInfo.environment["COMPANION_BACKEND"] {
       return URL(fileURLWithPath: development)
     }
@@ -63,6 +81,7 @@ struct LocalProfile: Codable, Identifiable {
   }
 
   var baseArguments: [String] {
+    if let homeOverride { return ["--home", homeOverride.path] }
     if let home = ProcessInfo.processInfo.environment["COMPANION_HOME"] {
       return ["--home", home]
     }
@@ -70,6 +89,7 @@ struct LocalProfile: Codable, Identifiable {
   }
 
   var releaseImage: String? {
+    if let imageOverride { return imageOverride }
     guard let path = Bundle.main.url(forResource: "release", withExtension: "json"),
       let data = try? Data(contentsOf: path),
       let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -223,6 +243,10 @@ struct LocalProfile: Codable, Identifiable {
         return report.ready
       },
       openDocker: {
+        if let opener = self.dockerOpener {
+          try await opener()
+          return
+        }
         guard
           let application = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: "com.docker.docker")
@@ -359,7 +383,7 @@ struct LocalProfile: Codable, Identifiable {
       guard response.ready, let url = Installation.localDashboardURL(response.dashboard) else {
         return
       }
-      NSWorkspace.shared.open(url)
+      dashboardOpener(url)
     } catch {
       installation.ready = false
       message = error.localizedDescription
@@ -501,10 +525,27 @@ struct LocalProfile: Codable, Identifiable {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-  let model = CompanionRuntime.model
-  let preferences = CompanionRuntime.preferences
+  let model: CompanionModel
+  let preferences: AppPreferences
+  private let beginMonitoring: @MainActor (CompanionModel, AppPreferences) -> Void
   private var onboarding: CompanionWindow?
   private var settings: CompanionWindow?
+
+  override convenience init() {
+    self.init(model: CompanionRuntime.model, preferences: CompanionRuntime.preferences)
+  }
+
+  init(
+    model: CompanionModel, preferences: AppPreferences,
+    beginMonitoring: @escaping @MainActor (CompanionModel, AppPreferences) -> Void = {
+      model, preferences in model.startMonitoring(preferences: preferences)
+    }
+  ) {
+    self.model = model
+    self.preferences = preferences
+    self.beginMonitoring = beginMonitoring
+    super.init()
+  }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     DistributedNotificationCenter.default().addObserver(
@@ -534,7 +575,7 @@ struct LocalProfile: Codable, Identifiable {
       self.onboarding?.close()
       self.preferences.enterMenuBar()
     }
-    model.startMonitoring(preferences: preferences)
+    beginMonitoring(model, preferences)
   }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool

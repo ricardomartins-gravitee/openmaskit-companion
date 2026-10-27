@@ -95,7 +95,22 @@ jobs:
       - name: Lint Swift sources and tests
         run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
       - name: Run Swift tests
-        run: swift test --package-path desktop/macos
+        run: |
+          swift test --package-path desktop/macos --enable-code-coverage
+          mkdir -p .runtime/native-coverage
+          cp "$(swift test --package-path desktop/macos --show-codecov-path)" .runtime/native-coverage/coverage.json
+        env:
+          COMPANION_SNAPSHOT_DIR: ${{ github.workspace }}/.runtime/native-ui-snapshots
+      - name: Retain native coverage and synthetic screen snapshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-ui-and-coverage-${{ matrix.os }}
+          path: |
+            .runtime/native-coverage/
+            .runtime/native-ui-snapshots/
+          if-no-files-found: error
+          retention-days: 14
       - name: Run native process and startup acceptance
         run: uv run --frozen --no-sync --no-build python scripts/test_macos_desktop.py
       - name: Build the companion app with the pinned connector
