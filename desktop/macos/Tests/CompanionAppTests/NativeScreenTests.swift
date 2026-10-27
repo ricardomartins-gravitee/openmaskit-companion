@@ -161,7 +161,13 @@ private struct SettingsComponentHost: View {
       let screen = TestScreen(model: f.model, fullSettings: true)
       defer { screen.close() }
       try await f.waitFor {
-        screen.elements().contains { $0.object is NSScrollView }
+        guard let window = screen.controller.window, let view = window.contentView,
+          let preferred = window.contentViewController?.preferredContentSize,
+          preferred.width > 0, preferred.height > 0
+        else { return false }
+        return abs(view.bounds.height - preferred.height) < 0.5
+          && abs(view.bounds.width - preferred.width) < 0.5
+          && screen.elements().contains { $0.object is NSScrollView }
       }
       let content = try XCTUnwrap(screen.controller.window?.contentView)
       XCTAssertLessThanOrEqual(content.bounds.height, NSScreen.main?.visibleFrame.height ?? 1200)
