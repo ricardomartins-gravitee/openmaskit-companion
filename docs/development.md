@@ -72,6 +72,11 @@ To keep a review build separate from an installed app, use
 image as usual). GUI acceptance should use an isolated `COMPANION_HOME` and
 synthetic health endpoint. Do not attach or change the user's installation as a
 side effect of running tests.
+Keep GUI fixture homes, helper executables (including their interpreter) and
+diagnostic output outside protected Documents, Desktop and Downloads folders;
+use a private temporary directory. Otherwise a test build can trigger macOS
+folder-access prompts unrelated to the packaged product. Do not request broader
+privacy permissions to work around a fixture's location.
 
 The macOS tests cover startup preference persistence and permanent menu availability,
 ignoring all combinations of retired visibility options, closing the window while preserving background operation,
@@ -108,9 +113,15 @@ certification or notarization.
 Live menu acceptance must verify the actual status item after closing Settings,
 including any menu-bar manager and macOS's native overflow. A menu policy test or
 a running background process alone does not prove the icon is visible. Launch the
-installed copy through Finder from its stable Applications location when checking
-LaunchServices-dependent menu-bar management, and do not change system or
-menu-manager preferences as an incidental test step.
+installed copy through Finder from `/Applications` when checking
+LaunchServices-dependent menu-bar management. Public registration alone does not
+certify that a menu-bar manager will display it. With Dimble 0.3.3 on macOS
+27.0.1, the same signed review bundle was registered in `~/Applications` and
+retained its native item, image and menu, but its status-item window had zero
+height while Dimble ran. Moving that bundle to `/Applications` restored the menu,
+including after restart and closing Settings. This is observed compatibility
+evidence, not a guarantee for every manager or OS version. Do not change system
+or menu-manager preferences as an incidental test step.
 
 Prerequisite tests simulate removed Docker Desktop, missing command tools,
 remote/broken contexts, missing or incompatible Compose, stopped engines and
