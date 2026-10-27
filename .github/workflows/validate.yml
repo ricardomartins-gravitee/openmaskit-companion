@@ -46,13 +46,61 @@ jobs:
       - run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package openmaskit-connector
       - name: Install the reviewed connector source from its verified wheel
         run: uv run --frozen --no-sync --no-build python scripts/install_connector.py
+      - name: Exercise the exact pinned connector dependency
+        working-directory: .runtime/connector-source
+        run: ../../.venv/bin/python -m pytest tests -q --junitxml=../pinned-connector-tests.xml --cov=openmaskit_connector --cov-branch --cov-report=xml:../pinned-connector-coverage.xml
+      - name: Retain pinned connector regression results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pinned-connector-regressions
+          path: |
+            .runtime/pinned-connector-tests.xml
+            .runtime/pinned-connector-coverage.xml
+          if-no-files-found: error
+          retention-days: 14
       - name: Build the pinned connector relay image for local acceptance
         run: docker buildx build --load --provenance=false --pull --tag openmaskit-connector:candidate .runtime/connector-source
       - name: Exercise the companion manager against an isolated candidate relay
         run: uv run --frozen --no-sync --no-build python scripts/manager_acceptance.py --candidate-image openmaskit-connector:candidate
 
-  test:
-    needs: [intel-wheel, integration]
+  native:
+    needs: [quality, security]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Lint Swift sources and tests
+        run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
+      - name: Run Swift tests
+        run: |
+          status=0
+          swift test --package-path desktop/macos --enable-code-coverage || status=$?
+          mkdir -p .runtime/native-coverage
+          report="$(swift test --package-path desktop/macos --show-codecov-path)"
+          if [ -f "$report" ]; then cp "$report" .runtime/native-coverage/coverage.json; fi
+          exit "$status"
+        env:
+          COMPANION_SNAPSHOT_DIR: ${{ github.workspace }}/.runtime/native-ui-snapshots
+      - name: Retain native coverage and synthetic screen snapshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-ui-and-coverage-${{ matrix.os }}
+          path: |
+            .runtime/native-coverage/
+            .runtime/native-ui-snapshots/
+          if-no-files-found: error
+          retention-days: 14
+
+  package-test:
+    needs: [intel-wheel, integration, native]
     strategy:
       fail-fast: false
       matrix:
@@ -92,16 +140,29 @@ jobs:
           uv pip install --python .venv/bin/python --no-deps --no-build --require-hashes --requirement "$RUNNER_TEMP/intel-wheel/install.txt"
           uv run --frozen --no-sync --no-build python .runtime/connector-source/scripts/test_crypto.py
       - run: uv run --frozen --no-sync --no-build pytest -q
-      - name: Lint Swift sources and tests
-        run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
-      - name: Run Swift tests
-        run: swift test --package-path desktop/macos
       - name: Run native process and startup acceptance
         run: uv run --frozen --no-sync --no-build python scripts/test_macos_desktop.py
       - name: Build the companion app with the pinned connector
         run: uv run --frozen --no-sync --no-build python scripts/bundle.py
       - name: Exercise the bundled connector backend contract
         run: uv run --frozen --no-sync --no-build python scripts/test_bundle.py
+
+  test:
+    if: always()
+    needs: [native, package-test]
+    strategy:
+      matrix:
+        os: [macos-26, macos-15-intel]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every native and packaging matrix job to pass
+        env:
+          NATIVE_RESULT: ${{ needs.native.result }}
+          PACKAGE_RESULT: ${{ needs.package-test.result }}
+        run: |
+          test "$NATIVE_RESULT" = success
+          test "$PACKAGE_RESULT" = success
 
   release-metadata:
     if: github.repository == 'ricardomartins-gravitee/openmaskit-companion' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

@@ -30,7 +30,14 @@ def test_quality_and_security_gate_all_companion_checks_and_packaging():
         assert "workflow_call" in workflow(f"{name}.yml")["on"]
     assert set(jobs["intel-wheel"]["needs"]) == {"quality", "security"}
     assert set(jobs["integration"]["needs"]) == {"quality", "security"}
-    assert set(jobs["test"]["needs"]) == {"intel-wheel", "integration"}
+    assert set(jobs["native"]["needs"]) == {"quality", "security"}
+    assert set(jobs["package-test"]["needs"]) == {
+        "intel-wheel",
+        "integration",
+        "native",
+    }
+    assert set(jobs["test"]["needs"]) == {"native", "package-test"}
+    assert jobs["test"]["if"] == "always()"
     assert set(jobs["release-metadata"]["needs"]) == {
         "test",
         "integration",
@@ -111,7 +118,7 @@ def test_connector_source_and_intel_wheel_are_pinned_to_the_same_commit():
     }
     jobs_to_check = {
         "quality": workflow("quality.yml")["jobs"]["python"],
-        **{name: jobs[name] for name in ("integration", "test", "package")},
+        **{name: jobs[name] for name in ("integration", "package-test", "package")},
     }
     for job in jobs_to_check.values():
         checkouts = [
@@ -172,7 +179,7 @@ def test_dependency_audit_excludes_only_connector_source_and_keeps_its_libraries
 
 def test_connector_wheel_is_verified_before_installing_on_intel():
     jobs = workflow("validate.yml")["jobs"]
-    test = jobs["test"]
+    test = jobs["package-test"]
     assert set(test["strategy"]["matrix"]["os"]) == {"macos-26", "macos-15-intel"}
     steps = test["steps"]
     downloads = [step for step in steps if "download-artifact@" in step.get("uses", "")]
@@ -193,7 +200,12 @@ def test_connector_wheel_is_verified_before_installing_on_intel():
 
 def test_companion_app_is_built_and_exercised_on_both_macos_architectures():
     jobs = workflow("validate.yml")["jobs"]
-    steps = jobs["test"]["steps"]
+    for job in ("native", "package-test", "test"):
+        assert set(jobs[job]["strategy"]["matrix"]["os"]) == {
+            "macos-26",
+            "macos-15-intel",
+        }
+    steps = jobs["native"]["steps"] + jobs["package-test"]["steps"]
     commands = "\n".join(step.get("run", "") for step in steps)
     assert "swift format lint --strict" in commands
     assert "swift test --package-path desktop/macos" in commands
@@ -408,3 +420,19 @@ def test_security_summary_rejects_oversized_reports(tmp_path):
     with path.open("wb") as report:
         report.truncate(16 * 1024 * 1024 + 1)
     assert report_summary(path).returncode == 1
+
+
+@pytest.mark.parametrize("native", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("package", ["success", "failure", "cancelled", "skipped"])
+def test_required_checks_reject_skipped_cancelled_or_failed_dependencies(
+    native, package
+):
+    gate = workflow("validate.yml")["jobs"]["test"]
+    assert gate["if"] == "always()"
+    result = subprocess.run(
+        ["bash", "-e", "-c", gate["steps"][0]["run"]],
+        env={**os.environ, "NATIVE_RESULT": native, "PACKAGE_RESULT": package},
+        capture_output=True,
+        timeout=5,
+    )
+    assert (result.returncode == 0) == (native == package == "success")

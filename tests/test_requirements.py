@@ -162,3 +162,32 @@ def test_removed_docker_keeps_configured_managed_selection(
     assert state["configured"] and state["mode"] == "managed"
     assert {p: p.read_bytes() for p in before} == before
     assert "private" not in json.dumps(state)
+
+
+def test_missing_binary_result_blocks_context_probes(runtime, monkeypatch):
+    context, command = runtime
+    monkeypatch.setattr(manager, "docker_binary", lambda: None)
+    assert not manager.prerequisites()["ready"]
+    context.assert_not_called()
+    command.assert_not_called()
+
+
+@pytest.mark.parametrize("available", ["system", "user", None])
+def test_desktop_discovery_checks_both_standard_locations(
+    monkeypatch, tmp_path, available
+):
+    monkeypatch.setattr(requirements.Path, "home", lambda: tmp_path)
+    expected = {
+        "system": "/Applications/Docker.app",
+        "user": str(tmp_path / "Applications/Docker.app"),
+    }.get(available)
+    monkeypatch.setattr(requirements.Path, "is_dir", lambda path: str(path) == expected)
+    assert requirements.desktop_installed() == (available is not None)
+
+
+def test_non_macos_manager_does_not_require_the_macos_desktop_bundle(
+    runtime, monkeypatch
+):
+    monkeypatch.setattr(requirements.sys, "platform", "linux")
+    assert manager.prerequisites()["ready"]
+    assert "desktop" not in checks(manager.prerequisites())

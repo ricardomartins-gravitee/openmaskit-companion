@@ -17,28 +17,13 @@ struct SettingsScreen: View {
 
   var body: some View {
     VStack(spacing: CompanionTokens.spaceMd) {
-      Picker("Settings section", selection: $model.settingsSection) {
-        Text("Installation").tag("installation")
-        Text("Local MCPs").tag("mcps")
-        Text("General").tag("general")
-      }.pickerStyle(.segmented)
+      SettingsSectionPicker(model: model)
       ScrollView {
-        VStack(spacing: CompanionTokens.spaceMd) {
-          if model.settingsSection == "installation" {
-            installationSettings
-            InstallationFeedback(model: model)
-          } else if model.settingsSection == "mcps" {
-            LocalMCPSettings(model: model)
-            InstallationFeedback(model: model)
-          } else {
-            appearanceSettings
-          }
-        }
-        .frame(maxWidth: .infinity)
-        .background(
-          GeometryReader { geometry in
-            Color.clear.preference(key: SettingsHeight.self, value: geometry.size.height)
-          })
+        SettingsContents(model: model, preferences: preferences)
+          .background(
+            GeometryReader { geometry in
+              Color.clear.preference(key: SettingsHeight.self, value: geometry.size.height)
+            })
       }
       .frame(
         height: min(contentHeight, max(250, (NSScreen.main?.visibleFrame.height ?? 800) - 200))
@@ -52,6 +37,37 @@ struct SettingsScreen: View {
     .tint(CompanionTheme.accent).padding(CompanionTokens.spaceLg)
     .frame(width: 620).fixedSize(horizontal: false, vertical: true)
     .background(CompanionTheme.root).preferredColorScheme(.dark)
+  }
+}
+
+struct SettingsSectionPicker: View {
+  @ObservedObject var model: CompanionModel
+  var body: some View {
+    Picker("Settings section", selection: $model.settingsSection) {
+      Text("Installation").tag("installation")
+      Text("Local MCPs").tag("mcps")
+      Text("General").tag("general")
+    }.pickerStyle(.segmented)
+      .accessibilityIdentifier("settings.section")
+  }
+}
+
+struct SettingsContents: View {
+  @ObservedObject var model: CompanionModel
+  @ObservedObject var preferences: AppPreferences
+  var body: some View {
+    VStack(spacing: CompanionTokens.spaceMd) {
+      if model.settingsSection == "installation" {
+        installationSettings
+        InstallationFeedback(model: model)
+      } else if model.settingsSection == "mcps" {
+        LocalMCPSettings(model: model)
+        InstallationFeedback(model: model)
+      } else {
+        appearanceSettings
+      }
+    }
+    .frame(maxWidth: .infinity)
   }
 
   @ViewBuilder private var installationSettings: some View {
@@ -70,8 +86,10 @@ struct SettingsScreen: View {
         }
         HStack {
           Button("Check Connection") { Task { await model.refresh() } }
+            .accessibilityIdentifier("settings.checkConnection")
             .buttonStyle(CompanionButtonStyle()).disabled(model.busy)
           Button("Open OpenMaskit") { Task { await model.openDashboard() } }
+            .accessibilityIdentifier("settings.dashboard")
             .buttonStyle(CompanionButtonStyle()).disabled(
               !model.installation.canOpenDashboard || model.busy)
         }
@@ -140,7 +158,9 @@ struct SettingsScreen: View {
       CompanionPanel("Startup & updates") {
         Toggle(
           "Start services and local MCPs when Companion opens",
-          isOn: $preferences.automaticallyStartServices)
+          isOn: $preferences.automaticallyStartServices
+        )
+        .accessibilityIdentifier("settings.autoStart")
         Text(
           "Opens Docker Desktop if needed and starts your configured installation and approved local MCPs. A manual stop lasts until the next launch."
         )
