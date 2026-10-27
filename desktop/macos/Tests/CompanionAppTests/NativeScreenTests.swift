@@ -24,24 +24,31 @@ import XCTest
     controller = CompanionWindow(
       title: "Synthetic Companion", content: content, preferences: preferences)
     controller.present()
+    controller.window?.contentView?.layoutSubtreeIfNeeded()
+    controller.window?.displayIfNeeded()
   }
 
-  func elements() -> [any NSAccessibilityProtocol] {
+  func elements() -> [ScreenAccessibility] {
+    controller.window?.contentView?.layoutSubtreeIfNeeded()
     var seen = Set<ObjectIdentifier>()
-    var output: [any NSAccessibilityProtocol] = []
+    var output: [ScreenAccessibility] = []
     func visit(_ value: Any) {
-      guard output.count < 10_000, let element = value as? any NSAccessibilityProtocol else {
+      guard output.count < 10_000, let object = value as? NSObject else {
         return
       }
-      guard seen.insert(ObjectIdentifier(element as AnyObject)).inserted else { return }
+      guard seen.insert(ObjectIdentifier(object)).inserted else { return }
+      let element = ScreenAccessibility(object: object)
       output.append(element)
       for child in element.accessibilityChildren() ?? [] { visit(child) }
+      if let view = object as? NSView {
+        for child in view.subviews { visit(child) }
+      }
     }
     if let window = controller.window { visit(window) }
     return output
   }
 
-  func text(_ element: any NSAccessibilityProtocol) -> String {
+  func text(_ element: ScreenAccessibility) -> String {
     [
       element.accessibilityLabel(), element.accessibilityTitle(),
       element.accessibilityValue() as? String,
@@ -51,14 +58,14 @@ import XCTest
 
   var allText: String { elements().map(text).joined(separator: "\n") }
 
-  func element(id: String) throws -> any NSAccessibilityProtocol {
+  func element(id: String) throws -> ScreenAccessibility {
     try XCTUnwrap(
       elements().first { $0.accessibilityIdentifier() == id },
       "Missing native accessibility identifier: " + id)
   }
 
   func element(named name: String, role: NSAccessibility.Role? = nil) throws
-    -> any NSAccessibilityProtocol
+    -> ScreenAccessibility
   {
     try XCTUnwrap(
       elements().first {
@@ -68,7 +75,7 @@ import XCTest
       }, "Missing native control: " + name)
   }
 
-  func press(_ element: any NSAccessibilityProtocol) {
+  func press(_ element: ScreenAccessibility) {
     XCTAssertTrue(element.isAccessibilityEnabled())
     XCTAssertTrue(
       element.accessibilityPerformPress(), "The native control does not expose a press action")
@@ -94,6 +101,12 @@ import XCTest
   }
 
   func close() {
+    try? snapshot("screen-" + suite)
+    if let folder = ProcessInfo.processInfo.environment["COMPANION_SNAPSHOT_DIR"] {
+      try? allText.write(
+        to: URL(fileURLWithPath: folder).appendingPathComponent("tree-" + suite + ".txt"),
+        atomically: true, encoding: .utf8)
+    }
     controller.close()
     defaults.removePersistentDomain(forName: suite)
     NSApplication.shared.setActivationPolicy(originalPolicy)

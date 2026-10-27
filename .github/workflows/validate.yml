@@ -46,6 +46,19 @@ jobs:
       - run: uv sync --frozen --no-build --python 3.12 --group dev --no-install-package openmaskit-connector
       - name: Install the reviewed connector source from its verified wheel
         run: uv run --frozen --no-sync --no-build python scripts/install_connector.py
+      - name: Exercise the exact pinned connector dependency
+        working-directory: .runtime/connector-source
+        run: ../../.venv/bin/python -m pytest tests -q --junitxml=../pinned-connector-tests.xml --cov=openmaskit_connector --cov-branch --cov-report=xml:../pinned-connector-coverage.xml
+      - name: Retain pinned connector regression results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pinned-connector-regressions
+          path: |
+            .runtime/pinned-connector-tests.xml
+            .runtime/pinned-connector-coverage.xml
+          if-no-files-found: error
+          retention-days: 14
       - name: Build the pinned connector relay image for local acceptance
         run: docker buildx build --load --provenance=false --pull --tag openmaskit-connector:candidate .runtime/connector-source
       - name: Exercise the companion manager against an isolated candidate relay
@@ -96,9 +109,12 @@ jobs:
         run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
       - name: Run Swift tests
         run: |
-          swift test --package-path desktop/macos --enable-code-coverage
+          status=0
+          swift test --package-path desktop/macos --enable-code-coverage || status=$?
           mkdir -p .runtime/native-coverage
-          cp "$(swift test --package-path desktop/macos --show-codecov-path)" .runtime/native-coverage/coverage.json
+          report="$(swift test --package-path desktop/macos --show-codecov-path)"
+          if [ -f "$report" ]; then cp "$report" .runtime/native-coverage/coverage.json; fi
+          exit "$status"
         env:
           COMPANION_SNAPSHOT_DIR: ${{ github.workspace }}/.runtime/native-ui-snapshots
       - name: Retain native coverage and synthetic screen snapshots
