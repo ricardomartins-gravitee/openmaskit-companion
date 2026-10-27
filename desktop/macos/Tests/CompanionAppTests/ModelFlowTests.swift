@@ -4,6 +4,61 @@ import XCTest
 @testable import OpenMaskitCompanion
 
 @MainActor final class ModelFlowTests: XCTestCase {
+  func testCancellingProfileSelectionPreservesFeedbackAndApprovedProfiles() {
+    var selections = 0
+    let model = CompanionModel(chooseProfile: {
+      selections += 1
+      return nil
+    })
+    model.message = "Local MCPs are connected."
+    model.profiles = [LocalProfile(id: "synthetic", name: "Synthetic MCP")]
+    model.approve()
+    XCTAssertEqual(selections, 1)
+    XCTAssertEqual(model.message, "Local MCPs are connected.")
+    XCTAssertEqual(model.profiles.map(\.id), ["synthetic"])
+    XCTAssertFalse(model.busy)
+  }
+
+  func testSelectedInvalidProfileStillShowsValidationFeedback() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("invalid-profile.json")
+    try Data("{}".utf8).write(to: file)
+    let model = CompanionModel(chooseProfile: { file })
+    model.message = "Local MCPs are connected."
+    model.approve()
+    XCTAssertEqual(model.message, "Choose a JSON profile containing an absolute executable path.")
+    XCTAssertFalse(model.busy)
+  }
+
+  func testConnectionLossReplacesSuccessAndRecoveryClearsOnlyTheConnectionIssue() async throws {
+    for mode in ["existing", "managed"] {
+      let f = try AppTestFixture()
+      defer { f.close() }
+      f.replies["status"] = ["body": AppTestFixture.state(mode: mode)]
+      try f.save()
+      await f.model.refresh()
+      f.model.message = "Connected. Your existing rules and settings stay in OpenMaskit."
+      var offline = AppTestFixture.state(mode: mode, ready: false)
+      let issue = "Synthetic OpenMaskit is unavailable. Check its connection and retry."
+      offline[mode == "existing" ? "error" : "connection_error"] = issue
+      f.replies["status"] = ["body": offline]
+      try f.save()
+      await f.model.refresh()
+      XCTAssertFalse(f.model.installation.canOpenDashboard)
+      XCTAssertEqual(f.model.message, issue)
+      f.replies["status"] = ["body": AppTestFixture.state(mode: mode)]
+      try f.save()
+      await f.model.refresh()
+      XCTAssertTrue(f.model.installation.canOpenDashboard)
+      XCTAssertTrue(f.model.message.isEmpty)
+      f.model.message = "MCP added. Configure its checks in OpenMaskit."
+      await f.model.refresh()
+      XCTAssertEqual(f.model.message, "MCP added. Configure its checks in OpenMaskit.")
+    }
+  }
+
   func testRefreshExistingNeverChecksDockerOrReadsManagedProfiles() async throws {
     let f = try AppTestFixture()
     defer { f.close() }
